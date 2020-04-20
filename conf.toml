@@ -1,7 +1,7 @@
 [markdown] # Markdown parser settings
 convert_line_breaks = false # Convert soft line breaks (newlines) into hard line breaks. This is best left disabled for most use cases.
 convert_punctuation = true # Convert simple punctuation into smart punctuation. This can make some documents easier to read, and many rich text editing programs do this by default. This shouldn't cause any meaningful issues, but if it does, you can disable it.
-enable_inline_html = false # Allow inline HTML to be used in markdown files. This can be very unsafe when parsing untrusted documents, but it can be made much safer using the built-in HTML sanitizer.
+enable_inline_html = true # Allow inline HTML to be used in markdown files. This can be very unsafe when parsing untrusted documents, but it can be made much safer using the built-in HTML sanitizer.
 enable_github_extensions = true # Enable GitHub markdown extensions (strikethrough, tables, automatic links, task lists. Unless this causes any issues, you can leave it enabled.
 enable_comrak_extensions = false # Enable Comrak markdown extensions (superscript, footnotes, description lists). Although this can be very useful, it's disabled by default, as most markdown documents are not written with these extensions in mind.
 
