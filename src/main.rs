@@ -5,6 +5,7 @@
 
 extern crate ammonia;
 extern crate comrak;
+extern crate exitcode;
 extern crate glob;
 extern crate hyperbuild;
 extern crate rayon;
@@ -81,54 +82,69 @@ fn parse_to_html(markdown_input: String, config: &Config) -> std::vec::Vec<u8> {
 
 	let mut html_output = markdown_html_output.as_bytes().to_vec();
 	if config.minifier.minify_generated {
-		let _ = hyperbuild(&mut html_output);
+		let _ = hyperbuild(&mut html_output); //TODO: Allow the function to return this error.
 	}
 
 	html_output
 }
 
 fn load_parse_write(fpath: &std::path::Path, header: &std::vec::Vec<u8>, footer: &std::vec::Vec<u8>, config: &Config) -> Result<(), Box<dyn std::error::Error>> {
-	let markdown_input = fs::read_to_string(&fpath).unwrap();
+	let markdown_input = fs::read_to_string(&fpath)?;
 	let html_output = parse_to_html(markdown_input, &config);
 
-	let mut file = File::create([&fpath.file_stem().unwrap().to_string_lossy(), ".html"].concat()).unwrap();
+	let mut file = File::create([&fpath.file_stem().unwrap_or(std::ffi::OsStr::new("")).to_string_lossy(), ".html"].concat())?;
 	if config.html.append_doctype {
-		file.write_all(b"<!DOCTYPE html>").unwrap();
+		file.write_all(b"<!DOCTYPE html>")?;
 	}
 	if config.html.append_viewport {
-		file.write_all(b"<meta name=viewport content=\"width=device-width,initial-scale=1\">").unwrap();
+		file.write_all(b"<meta name=viewport content=\"width=device-width,initial-scale=1\">")?;
 	}
 	if !config.html.custom_css.is_empty() {
-		file.write_all(b"<style>").unwrap();
-		file.write_all(config.html.custom_css.as_bytes()).unwrap();
-		file.write_all(b"</style>").unwrap();
+		file.write_all(b"<style>")?;
+		file.write_all(config.html.custom_css.as_bytes())?;
+		file.write_all(b"</style>")?;
 	}
 	if !header.is_empty() {
-		file.write_all(&header).unwrap();
+		file.write_all(&header)?;
 	}
-	file.write_all(&html_output).unwrap();
+	file.write_all(&html_output)?;
 	if !footer.is_empty() {
-		file.write_all(&footer).unwrap();
+		file.write_all(&footer)?;
 	}
 	Ok(())
 }
 
 fn main() {
 	println!("Loading config...");
-	let config_input = fs::read_to_string("conf.toml").unwrap();
-	let config: Config = toml::from_str(&config_input).unwrap();
+	let config_input = fs::read_to_string("conf.toml").unwrap_or_else(|_| {
+		println!("Unable to read config file!");
+		std::process::exit(exitcode::NOINPUT);
+	});
+	let config: Config = toml::from_str(&config_input).unwrap_or_else(|err| {
+		println!("Unable to parse config file! Additional info below:\n{:#?}", err);
+		std::process::exit(exitcode::CONFIG);
+	});
 
 	let mut custom_header = config.html.custom_header_html.as_bytes().to_vec();
 	let mut custom_footer = config.html.custom_footer_html.as_bytes().to_vec();
 	if config.minifier.minify_custom {
-		hyperbuild(&mut custom_header).unwrap();
-		hyperbuild(&mut custom_footer).unwrap();
+		hyperbuild(&mut custom_header).unwrap_or_else(|err| {
+			println!("Unable to minify html.custom_header_html! Additional info below:\n{:#?}", err);
+			std::process::exit(exitcode::CONFIG);
+		});
+		hyperbuild(&mut custom_footer).unwrap_or_else(|err| {
+			println!("Unable to minify html.custom_footer_html! Additional info below:\n{:#?}", err);
+			std::process::exit(exitcode::CONFIG);
+		});
 	}
 
+	// TODO: Get rid of this unwrap() call, if possible.
 	let files: Vec<_> = glob("./*.md").unwrap().filter_map(Result::ok).collect();
 
 	files.par_iter().for_each(|fpath| {
 		println!("Parsing {}...", fpath.to_string_lossy());
-		load_parse_write(fpath, &custom_header, &custom_footer, &config).unwrap();
+		if let Err(err) = load_parse_write(fpath, &custom_header, &custom_footer, &config) {
+			println!("Unable to parse {}! Additionl info below:\n{:#?}", fpath.to_string_lossy(), err);
+		}
 	});
 }
