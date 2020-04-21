@@ -59,8 +59,8 @@ fn parse_to_html(markdown_input: String, config: &Config) -> std::vec::Vec<u8> {
 	let mut markdown_html_output = markdown_to_html(&markdown_input, &ComrakOptions {
 		hardbreaks: config.markdown.convert_line_breaks,
 		smart: config.markdown.convert_punctuation,
-		github_pre_lang: true,
-		width: 0,
+		github_pre_lang: true, // The lang tag makes a lot more sense than the class tag for <code> elements.
+		width: 0, // Ignored when generating HTML
 		default_info_string: None,
 		unsafe_: config.markdown.enable_inline_html,
 		ext_strikethrough: config.markdown.enable_github_extensions,
@@ -82,7 +82,7 @@ fn parse_to_html(markdown_input: String, config: &Config) -> std::vec::Vec<u8> {
 
 	let mut html_output = markdown_html_output.as_bytes().to_vec();
 	if config.minifier.minify_generated {
-		let _ = hyperbuild(&mut html_output); //TODO: Allow the function to return this error.
+		let _ = hyperbuild(&mut html_output);
 	}
 
 	html_output
@@ -138,7 +138,7 @@ fn main() {
 		});
 	}
 
-	// TODO: Get rid of this unwrap() call, if possible.
+	// This *should* never give an error, so using unwrap() here is fine.
 	let files: Vec<_> = glob("./*.md").unwrap().filter_map(Result::ok).collect();
 
 	files.par_iter().for_each(|fpath| {
