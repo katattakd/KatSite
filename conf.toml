@@ -1,22 +1,24 @@
-[markdown] # Markdown parser settings
-convert_line_breaks = false # Convert soft line breaks (newlines) into hard line breaks. This is best left disabled for most use cases.
-convert_punctuation = true # Convert simple punctuation into smart punctuation. This can make some documents easier to read, and many rich text editing programs do this by default. This shouldn't cause any meaningful issues, but if it does, you can disable it.
-enable_inline_html = true # Allow inline HTML to be used in markdown files. This can be very unsafe when parsing untrusted documents, but it can be made much safer using the built-in HTML sanitizer.
-enable_github_extensions = true # Enable GitHub markdown extensions (strikethrough, tables, automatic links, task lists. Unless this causes any issues, you can leave it enabled.
-enable_comrak_extensions = false # Enable Comrak markdown extensions (superscript, footnotes, description lists). Although this can be very useful, it's disabled by default, as most markdown documents are not written with these extensions in mind.
+[markdown] # Markdown parser settings. These are best left at defaults.
+convert_line_breaks = false # Convert soft line breaks (newlines) into hard line breaks.
+convert_punctuation = true # Convert simple punctuation into smart punctuation (curly quotes).
+enable_raw_html_inlining = true # Allow inline HTML to be used in markdown files.
+enable_github_extensions = true # Enable GitHub markdown extensions (strikethrough, tables, automatic links, task lists.
+enable_comrak_extensions = true # Enable Comrak markdown extensions (superscript, footnotes, description lists).
+enable_liquid_templating = true # Enable Liquid templating language.
 
 [sanitizer] # HTML sanitizer settings
-sanitize_generated = true # Sanitize document HTML after it's been generated. This will prevent documents from adding their own CSS/JavaScript, but can slow down document generation a bit. If you're writing your own documents, you can safely disable this. If you're parsing untrusted documents, this is best left enabled.
+sanitize_generated = true # Sanitize document HTML after it's been generated. You can safely disable this if you aren't parsing user-submitted documents.
 
 [minifier] # HTML minifier settings
-minify_custom = true # Minify HTML appended to the file. This is best left enabled, unless it causes problems.
-minify_generated = true # Minify document HTML after it's been generated. Disabiling this can speed up document generation slightly, but will result in a slightly larger output file. In doubt, leave this enabled unless it causes problems.
+minify_custom = false # Minify HTML appended to the file.
+minify_generated = false # Minify document HTML after it's been generated.
 
 [html] # HTML generator settings
 append_doctype = true # Append an HTML5 doctype to the file.
 append_viewport = true # Append a responsive viewport tag to the file.
 #custom_css = "body{font-size:18px;padding:0 1em}"
-custom_css = "body{font:16px/1.7 monospace;margin:auto;padding:1em 4em;max-width:64em}code{background-color:#ddd;padding:.2em .4em;font-size:95%;display:inline-block}a{text-decoration:none}img{max-width:100%}blockquote{border-left:.5em solid #000;padding:0 1em;margin:0}table{border-collapse:collapse}td,th{padding:1em;border:.3em solid #000}@media (prefers-color-scheme:dark){body{color:#ddd;background-color:#282a36}code,td,th{background-color:#222}a{color:#8ef}}" # Append a custom stylesheet to the file.
+#custom_css = "body{font:16px/1.7 sans-serif;margin:auto;padding:1em 4em;max-width:64em}code{background-color:#ddd;padding:.2em .4em;font-size:95%;display:inline-block}a{text-decoration:none}img{max-width:100%}blockquote{border-left:.2em solid #000;padding:0 1em;margin:0}table{border-collapse:collapse}td,th{padding:1em;border:.2em solid #000}"
+custom_css = "body{font:16px/1.7 monospace;margin:auto;padding:1em 4em;max-width:64em;color:#ddd;background-color:#282a36}code,td,th{background-color:#222}code{padding:.2em .4em;font-size:95%;display:inline-block}a{color:#8ef;text-decoration:none}img{max-width:100%}blockquote{border-left:.4em solid #000;padding:0 1em;margin:0}table{border-collapse:collapse}td,th{padding:1em;border:.3em solid #000}" # Append a custom stylesheet to the file.
 custom_header_html = "" # Append custom HTML to the start of the file (after the optional doctype, viewport, and stylesheet).
 custom_footer_html = "" # Append custom HTML to the end of the file.
 
