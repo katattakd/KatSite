@@ -8,6 +8,7 @@ extern crate comrak;
 extern crate exitcode;
 extern crate glob;
 extern crate hyperbuild;
+extern crate liquid;
 extern crate rayon;
 extern crate serde_derive;
 extern crate toml;
@@ -30,9 +31,10 @@ struct Config {
 struct Markdown {
 	convert_line_breaks: bool,
 	convert_punctuation: bool,
-	enable_inline_html: bool,
+	enable_raw_html_inlining: bool,
 	enable_github_extensions: bool,
 	enable_comrak_extensions: bool,
+	enable_liquid_templating: bool,
 }
 
 #[derive(Deserialize)]
@@ -55,16 +57,21 @@ struct HTML {
 	custom_footer_html: String,
 }
 
-fn parse_to_html(markdown_input: String, config: &Config) -> std::vec::Vec<u8> {
+fn parse_to_html(mut markdown_input: String, config: &Config) -> Result<std::vec::Vec<u8>, Box<dyn std::error::Error>> {
+	if config.markdown.enable_liquid_templating {
+		let template = liquid::ParserBuilder::new().stdlib().build()?.parse(&markdown_input)?;
+		markdown_input = template.render(&liquid::Object::new()).unwrap();
+	}
+
 	let mut markdown_html_output = markdown_to_html(&markdown_input, &ComrakOptions {
 		hardbreaks: config.markdown.convert_line_breaks,
 		smart: config.markdown.convert_punctuation,
 		github_pre_lang: true, // The lang tag makes a lot more sense than the class tag for <code> elements.
 		width: 0, // Ignored when generating HTML
 		default_info_string: None,
-		unsafe_: config.markdown.enable_inline_html,
+		unsafe_: config.markdown.enable_raw_html_inlining,
 		ext_strikethrough: config.markdown.enable_github_extensions,
-		ext_tagfilter: config.sanitizer.sanitize_generated,
+		ext_tagfilter: false,
 		ext_table: config.markdown.enable_github_extensions,
 		ext_autolink: config.markdown.enable_github_extensions,
 		ext_tasklist: config.markdown.enable_github_extensions,
@@ -80,17 +87,18 @@ fn parse_to_html(markdown_input: String, config: &Config) -> std::vec::Vec<u8> {
 			.to_string();
 	}
 
+	// TODO: Replace hyperbuild with a more "correct" minifier.
 	let mut html_output = markdown_html_output.as_bytes().to_vec();
 	if config.minifier.minify_generated {
-		let _ = hyperbuild(&mut html_output);
+		hyperbuild(&mut html_output).unwrap();
 	}
 
-	html_output
+	Ok(html_output)
 }
 
 fn load_parse_write(fpath: &std::path::Path, header: &std::vec::Vec<u8>, footer: &std::vec::Vec<u8>, config: &Config) -> Result<(), Box<dyn std::error::Error>> {
 	let markdown_input = fs::read_to_string(&fpath)?;
-	let html_output = parse_to_html(markdown_input, &config);
+	let html_output = parse_to_html(markdown_input, &config)?;
 
 	let mut file = File::create([&fpath.file_stem().unwrap_or(std::ffi::OsStr::new("")).to_string_lossy(), ".html"].concat())?;
 	if config.html.append_doctype {
