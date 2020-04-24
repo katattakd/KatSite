@@ -3,6 +3,8 @@
 #![allow(clippy::cargo)]
 #![deny(clippy::all)]
 
+// TODO: Implement brotli and gzip compression.
+
 extern crate ammonia;
 extern crate comrak;
 extern crate exitcode;
@@ -94,9 +96,9 @@ fn parse_to_html(mut markdown_input: String, config: &Config) -> Result<std::vec
 				html_output.truncate(minified_len)
 			},
 			Err((error_type, error_at_char_no)) => {
-				Err(std::io::Error::new(
+				return Err(std::io::Error::new(
 					std::io::ErrorKind::Other, error_type.message() + &error_at_char_no.to_string()
-				))?
+				).into())
 			}
 		}
 	}
@@ -104,15 +106,16 @@ fn parse_to_html(mut markdown_input: String, config: &Config) -> Result<std::vec
 	Ok(html_output)
 }
 
-fn load_parse_write(fpath: &std::path::Path, header: &std::vec::Vec<u8>, footer: &std::vec::Vec<u8>, config: &Config) -> Result<(), Box<dyn std::error::Error>> {
+fn load_parse_write(fpath: &std::path::Path, header: &[u8], footer: &[u8], config: &Config) -> Result<(), Box<dyn std::error::Error>> {
 	let markdown_input = fs::read_to_string(&fpath)?;
-	let html_output = parse_to_html(markdown_input, &config)?;
+	let html_output = parse_to_html(markdown_input, config)?;
 
-	let mut file = File::create([&fpath.file_stem().unwrap_or(std::ffi::OsStr::new("")).to_string_lossy(), ".html"].concat())?;
+	let mut file = File::create([&fpath.file_stem().unwrap_or_else(|| std::ffi::OsStr::new("")).to_string_lossy(), ".html"].concat())?;
 	if config.html.append_doctype {
-		file.write_all(b"<!DOCTYPE html>")?;
+		file.write_all(b"<!doctype html>")?;
 	}
 	if config.html.append_viewport {
+		//file.write_all(b"<meta name="viewport" content=\"width=device-width,initial-scale=1\">")?;
 		file.write_all(b"<meta name=viewport content=\"width=device-width,initial-scale=1\">")?;
 	}
 	if !config.html.custom_css.is_empty() {
@@ -121,11 +124,11 @@ fn load_parse_write(fpath: &std::path::Path, header: &std::vec::Vec<u8>, footer:
 		file.write_all(b"</style>")?;
 	}
 	if !header.is_empty() {
-		file.write_all(&header)?;
+		file.write_all(header)?;
 	}
 	file.write_all(&html_output)?;
 	if !footer.is_empty() {
-		file.write_all(&footer)?;
+		file.write_all(footer)?;
 	}
 	Ok(())
 }
