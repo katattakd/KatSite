@@ -87,10 +87,18 @@ fn parse_to_html(mut markdown_input: String, config: &Config) -> Result<std::vec
 			.to_string();
 	}
 
-	// TODO: Replace hyperbuild with a more "correct" minifier.
 	let mut html_output = markdown_html_output.as_bytes().to_vec();
 	if config.minifier.minify_generated {
-		hyperbuild(&mut html_output).unwrap();
+		match hyperbuild(&mut html_output) {
+			Ok(minified_len) => {
+				html_output.truncate(minified_len)
+			},
+			Err((error_type, error_at_char_no)) => {
+				Err(std::io::Error::new(
+					std::io::ErrorKind::Other, error_type.message() + &error_at_char_no.to_string()
+				))?
+			}
+		}
 	}
 
 	Ok(html_output)
