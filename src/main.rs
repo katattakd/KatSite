@@ -144,14 +144,17 @@ fn main() {
 	let mut custom_header = config.html.custom_header_html.as_bytes().to_vec();
 	let mut custom_footer = config.html.custom_footer_html.as_bytes().to_vec();
 	if config.minifier.minify_custom {
-		hyperbuild(&mut custom_header).unwrap_or_else(|err| {
+		let header_len = hyperbuild(&mut custom_header).unwrap_or_else(|err| {
 			println!("Unable to minify html.custom_header_html! Additional info below:\n{:#?}", err);
 			std::process::exit(exitcode::CONFIG);
 		});
-		hyperbuild(&mut custom_footer).unwrap_or_else(|err| {
+		custom_header.truncate(header_len);
+
+		let footer_len = hyperbuild(&mut custom_footer).unwrap_or_else(|err| {
 			println!("Unable to minify html.custom_footer_html! Additional info below:\n{:#?}", err);
 			std::process::exit(exitcode::CONFIG);
 		});
+		custom_footer.truncate(footer_len);
 	}
 
 	// This *should* never give an error, so using unwrap() here is fine.
