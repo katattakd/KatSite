@@ -10,8 +10,8 @@ enable_liquid_templating = true # Enable Liquid templating language.
 sanitize_generated = true # Sanitize document HTML after it's been generated. You can safely disable this if you aren't parsing user-submitted documents.
 
 [minifier] # HTML minifier settings
-minify_custom = false # Minify HTML appended to the file.
-minify_generated = false # Minify document HTML after it's been generated.
+minify_custom = true # Minify HTML appended to the file.
+minify_generated = true # Minify document HTML after it's been generated.
 
 [html] # HTML generator settings
 append_doctype = true # Append an HTML5 doctype to the file.
