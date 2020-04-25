@@ -7,18 +7,15 @@ enable_comrak_extensions = true # Enable Comrak markdown extensions (superscript
 enable_liquid_templating = true # Enable Liquid templating language.
 
 [sanitizer] # HTML sanitizer settings
-sanitize_generated = true # Sanitize document HTML after it's been generated. You can safely disable this if you aren't parsing user-submitted documents.
+sanitize_generated = false # Sanitize document HTML after it's been generated. If you are parsing user-submitted documents, you might want to enable this to prevent them from adding their own CSS/JavaScript.
 
 [minifier] # HTML minifier settings
-minify_custom = true # Minify HTML appended to the file.
+minify_custom = true # Minify HTML/CSS appended to the file. CSS minification requires append_css_link to be enabled.
 minify_generated = true # Minify document HTML after it's been generated.
 
 [html] # HTML generator settings
 append_doctype = true # Append an HTML5 doctype to the file.
 append_viewport = true # Append a responsive viewport tag to the file.
-#custom_css = "body{font-size:18px;padding:0 1em}"
-#custom_css = "body{font:16px/1.7 sans-serif;margin:auto;padding:1em 4em;max-width:64em}code{background-color:#ddd;padding:.2em .4em;font-size:95%;display:inline-block}a{text-decoration:none}img{max-width:100%}blockquote{border-left:.2em solid #000;padding:0 1em;margin:0}table{border-collapse:collapse}td,th{padding:1em;border:.2em solid #000}"
+append_css_link = true # Convert the custom_css stylesheet into a file, and append the css as a link instead of inline code.
 custom_css = "body{font:16px/1.7 monospace;margin:auto;padding:1em 4em;max-width:64em;color:#ddd;background-color:#282a36}code,td,th{background-color:#222}code{padding:.2em .4em;font-size:95%;display:inline-block}a{color:#8ef;text-decoration:none}img{max-width:100%}blockquote{border-left:.4em solid #000;padding:0 1em;margin:0}table{border-collapse:collapse}td,th{padding:1em;border:.3em solid #000}" # Append a custom stylesheet to the file.
-custom_header_html = "" # Append custom HTML to the start of the file (after the optional doctype, viewport, and stylesheet).
-custom_footer_html = "" # Append custom HTML to the end of the file.
-
+custom_html = "" # Append custom HTML to the start of the file (after the optional doctype, viewport, and stylesheet).
