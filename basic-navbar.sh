@@ -2,6 +2,8 @@
 set -euo pipefail
 STDIN=$(cat)
 
+[ "$1" != "markdown" ] && exit
+
 for file in *.md; do
 	document="${file%.*}"
 	echo "[$document]($document.html)"
