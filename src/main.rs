@@ -47,25 +47,32 @@ struct Plugins {
 	plugins_list: Vec<String>,
 }
 
-fn parse_to_html(mut markdown_input: String, config: &Config) -> Result<std::vec::Vec<u8>, Box<dyn std::error::Error>> {
-	let mut input_raw = markdown_input.as_bytes().to_vec();
+fn run_plugins(mut input: std::vec::Vec<u8>, hook: &str, config: &Config) -> Result<std::vec::Vec<u8>, Box<dyn std::error::Error>> {
 	for plugin in &config.plugins.plugins_list {
 		let mut child = Command::new(PathBuf::from(plugin).canonicalize()?)
+			.arg(hook)
 			.stdin(Stdio::piped())
 			.stdout(Stdio::piped())
 			.spawn()?;
 
-		// The child *will* have an stdin piped, so we can use unwrap here.
-		child.stdin.as_mut().unwrap().write_all(&input_raw)?;
+		// The child *will* have stdin piped, so we can use unwrap here.
+		child.stdin.as_mut().unwrap().write_all(&input)?;
 
 		let output = child.wait_with_output()?;
 		if output.status.success() {
-			input_raw = output.stdout;
+			if !output.stdout.is_empty() {
+				input = output.stdout;
+			}
 		} else {
-			print!("Warn: Plugin {} returned a non-zero exit code, discarding it's output...", plugin);
+			println!("Warn: Plugin {} returned a non-zero exit code, discarding it's output...", plugin);
 		}
 	}
-	markdown_input = String::from_utf8_lossy(&input_raw).to_string();
+	Ok(input)
+}
+
+fn parse_to_html(mut markdown_input: String, config: &Config) -> Result<std::vec::Vec<u8>, Box<dyn std::error::Error>> {
+	let plugin_output = run_plugins(markdown_input.as_bytes().to_vec(), "markdown", config)?;
+	markdown_input = String::from_utf8_lossy(&plugin_output).to_string();
 
 	if config.markdown.enable_liquid_templating {
 		let template = liquid::ParserBuilder::new().stdlib().build()?.parse(&markdown_input)?;
@@ -103,7 +110,7 @@ fn parse_to_html(mut markdown_input: String, config: &Config) -> Result<std::vec
 		}
 	}
 
-	Ok(html_output)
+	run_plugins(html_output, "html", config)
 }
 
 fn load_parse_write(fpath: &std::path::Path, config: &Config) -> Result<(), Box<dyn std::error::Error>> {
@@ -127,6 +134,11 @@ fn main() {
 	let config: Config = toml::from_str(&config_input).unwrap_or_else(|err| {
 		println!("Unable to parse config file! Additional info below:\n{:#?}", err);
 		exit(exitcode::CONFIG);
+	});
+
+	let _ = run_plugins(config_input.as_bytes().to_vec(), "config", &config).unwrap_or_else(|err| {
+		println!("Unable to initialize plugins! Additional info below:\n{:#?}", err);
+		exit(exitcode::UNAVAILABLE);
 	});
 
 	// This *should* never give an error, so using unwrap() here is fine.
