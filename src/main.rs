@@ -37,6 +37,26 @@ struct Plugins {
 	plugins_list: Vec<String>,
 }
 
+fn init_plugins(hook: &str, config: &Config) {
+	config.plugins.plugins_list.par_iter().for_each(|plugin| {
+		let exit_status = Command::new(PathBuf::from(plugin).canonicalize().unwrap_or_else(|err| {
+			println!("Unable to find plugin {}! Additional info below.\n{}", plugin, err);
+			exit(exitcode::NOINPUT);
+		}))
+			.arg(hook)
+			.stdin(Stdio::piped())
+			.stdout(Stdio::piped())
+			.status().unwrap_or_else(|err| {
+				println!("Unable to start plugin {}! Additional info below.\n{}", plugin, err);
+				exit(exitcode::OSERR);
+			});
+
+		if !exit_status.success() {
+			println!("Warn: Plugin {} returned a non-zero exit code during init.", plugin);
+		}
+	});
+}
+
 fn run_plugins(mut input: std::vec::Vec<u8>, hook: &str, config: &Config) -> Result<std::vec::Vec<u8>, Box<dyn std::error::Error>> {
 	for plugin in &config.plugins.plugins_list {
 		let mut child = Command::new(PathBuf::from(plugin).canonicalize()?)
@@ -109,17 +129,14 @@ fn main() {
 		exit(exitcode::CONFIG);
 	});
 
-	let _ = run_plugins(config_input.as_bytes().to_vec(), "config", &config).unwrap_or_else(|err| {
-		println!("Unable to initialize plugins! Additional info below:\n{:#?}", err);
-		exit(exitcode::UNAVAILABLE);
-	});
+	init_plugins("config", &config);
 
 	// This *should* never give an error, so using unwrap() here is fine.
-	let files: Vec<_> = glob("./*.md").unwrap().filter_map(Result::ok).collect();
+	let files = glob("./*.md").unwrap().par_bridge();
 
-	files.par_iter().for_each(|fpath| {
+	files.filter_map(Result::ok).for_each(|fpath| {
 		println!("Parsing {}...", fpath.to_string_lossy());
-		if let Err(err) = load_parse_write(fpath, &config) {
+		if let Err(err) = load_parse_write(&fpath, &config) {
 			println!("Unable to parse {}! Additional info below:\n{:#?}", fpath.to_string_lossy(), err);
 		}
 	});
