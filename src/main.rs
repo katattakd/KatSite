@@ -6,15 +6,12 @@
 extern crate comrak;
 extern crate exitcode;
 extern crate glob;
-extern crate hyperbuild;
-extern crate liquid;
 extern crate minifier;
 extern crate rayon;
 extern crate serde_derive;
 extern crate toml;
 use comrak::{markdown_to_html, ComrakOptions};
 use glob::glob;
-use hyperbuild::hyperbuild;
 use rayon::prelude::*;
 use serde_derive::Deserialize;
 use std::{string::String, path::PathBuf, fs, fs::File, io::Write, process::{exit, Command, Stdio}};
@@ -22,7 +19,6 @@ use std::{string::String, path::PathBuf, fs, fs::File, io::Write, process::{exit
 #[derive(Deserialize)]
 struct Config {
 	markdown: Markdown,
-	minifier: Minifier,
 	plugins: Plugins,
 }
 
@@ -33,12 +29,6 @@ struct Markdown {
 	enable_raw_html_inlining: bool,
 	enable_github_extensions: bool,
 	enable_comrak_extensions: bool,
-	enable_liquid_templating: bool,
-}
-
-#[derive(Deserialize)]
-struct Minifier {
-	minify_generated: bool,
 }
 
 #[derive(Deserialize)]
@@ -55,8 +45,9 @@ fn run_plugins(mut input: std::vec::Vec<u8>, hook: &str, config: &Config) -> Res
 			.stdout(Stdio::piped())
 			.spawn()?;
 
-		// The child *will* have stdin piped, so we can use unwrap here.
-		child.stdin.as_mut().unwrap().write_all(&input)?;
+		if child.stdin.as_mut().unwrap().write_all(&input).is_err() {
+			continue
+		}
 
 		let output = child.wait_with_output()?;
 		if output.status.success() {
@@ -74,12 +65,7 @@ fn parse_to_html(mut markdown_input: String, config: &Config) -> Result<std::vec
 	let plugin_output = run_plugins(markdown_input.as_bytes().to_vec(), "markdown", config)?;
 	markdown_input = String::from_utf8_lossy(&plugin_output).to_string();
 
-	if config.markdown.enable_liquid_templating {
-		let template = liquid::ParserBuilder::new().stdlib().build()?.parse(&markdown_input)?;
-		markdown_input = template.render(&liquid::Object::new()).unwrap();
-	}
-
-	let mut html_output = markdown_to_html(&markdown_input, &ComrakOptions {
+	let html_output = markdown_to_html(&markdown_input, &ComrakOptions {
 		hardbreaks: config.markdown.convert_line_breaks,
 		smart: config.markdown.convert_punctuation,
 		github_pre_lang: true, // The lang tag makes a lot more sense than the class tag for <code> elements.
@@ -96,19 +82,6 @@ fn parse_to_html(mut markdown_input: String, config: &Config) -> Result<std::vec
 		ext_footnotes: config.markdown.enable_comrak_extensions,
 		ext_description_lists: config.markdown.enable_comrak_extensions,
         }).as_bytes().to_vec();
-
-	if config.minifier.minify_generated {
-		match hyperbuild(&mut html_output) {
-			Ok(minified_len) => {
-				html_output.truncate(minified_len)
-			},
-			Err((error_type, error_at_char_no)) => {
-				return Err(std::io::Error::new(
-					std::io::ErrorKind::Other, error_type.message() + &error_at_char_no.to_string()
-				).into())
-			}
-		}
-	}
 
 	run_plugins(html_output, "html", config)
 }
