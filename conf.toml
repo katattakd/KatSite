@@ -1,4 +1,4 @@
-[markdown] # Markdown parser settings. These are best left at defaults.
+[markdown] # Markdown parser settings. These are best left at defaults, changing them can break some plugins.
 convert_line_breaks = false # Convert soft line breaks (newlines) into hard line breaks.
 convert_punctuation = true # Convert simple punctuation into smart punctuation (curly quotes).
 enable_raw_html_inlining = true # Allow inline HTML to be used in markdown files.
@@ -6,16 +6,10 @@ enable_github_extensions = true # Enable GitHub markdown extensions (strikethrou
 enable_comrak_extensions = true # Enable Comrak markdown extensions (superscript, footnotes, description lists).
 enable_liquid_templating = true # Enable Liquid templating language.
 
-[sanitizer] # HTML sanitizer settings
-sanitize_generated = false # Sanitize document HTML after it's been generated. If you are parsing user-submitted documents, you might want to enable this to prevent them from adding their own CSS/JavaScript.
-
 [minifier] # HTML minifier settings
-minify_custom = true # Minify HTML/CSS appended to the file. CSS minification requires append_css_link to be enabled.
+# Note that the minifier can cause problems. All sites using it should check that the generated HTML displays properly in major browsers before uploading it.
 minify_generated = true # Minify document HTML after it's been generated.
 
-[html] # HTML generator settings
-append_doctype = true # Append an HTML5 doctype to the file.
-append_viewport = true # Append a responsive viewport tag to the file.
-append_css_link = true # Convert the custom_css stylesheet into a file, and append the css as a link instead of inline code.
-custom_css = "body{font:16px/1.7 monospace;margin:auto;padding:1em 4em;max-width:64em;color:#ddd;background-color:#282a36}code,td,th{background-color:#222}code{padding:.2em .4em;font-size:95%;display:inline-block}a{color:#8ef;text-decoration:none}img{max-width:100%}blockquote{border-left:.4em solid #000;padding:0 1em;margin:0}table{border-collapse:collapse}td,th{padding:1em;border:.3em solid #000}" # Append a custom stylesheet to the file.
-custom_html = "" # Append custom HTML to the start of the file (after the optional doctype, viewport, and stylesheet).
+[plugins] # KatSite plugin settings
+enable_core = true # Core is a built-in plugin that adds a doctype and viewport, and should not be disabled unless necessary.
+plugins_list = ["./basic-site.sh"] # Loads the "basic-site" plugin.
