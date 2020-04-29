@@ -17,8 +17,8 @@ echo "$STDIN" | html-minifier-terser \
 	--collapse-whitespace \
 	--decode-entities \
 	--no-include-auto-generated-tags \
-	--minify-css \
-	--minify-js \
+	--minify-css true \
+	--minify-js true \
 	--process-conditional-comments \
 	--remove-attribute-quotes \
 	--remove-comments \
