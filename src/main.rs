@@ -105,7 +105,7 @@ fn parse_to_html(raw_input: std::vec::Vec<u8>, config: &Config) -> std::vec::Vec
         });
 
 	if config.plugins.enable_core {
-		html_output += "<!doctype html><meta name=viewport content=\"width=device-width,initial-scale=1\">";
+		html_output = ["<!doctype html><meta name=viewport content=\"width=device-width,initial-scale=1\">".to_string(), html_output].concat();
 	}
 
 	run_plugins(html_output.as_bytes().to_vec(), "html", config)
