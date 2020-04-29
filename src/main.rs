@@ -14,7 +14,7 @@ use comrak::{markdown_to_html, ComrakOptions};
 use glob::glob;
 use rayon::prelude::*;
 use serde_derive::Deserialize;
-use std::{string::String, path::PathBuf, fs, io::Write, process::{exit, Command, Stdio}};
+use std::{string::String, path::PathBuf, fs, io::Write, process::{exit, Command, Stdio, Child}};
 
 #[derive(Deserialize)]
 struct Config {
@@ -37,20 +37,21 @@ struct Plugins {
 	plugins_list: Vec<String>,
 }
 
+fn create_plugin_process(plugin: &str, hook: &str) -> Child {
+	Command::new(PathBuf::from("plugins/").join(plugin))
+		.arg(hook)
+		.stdin(Stdio::piped())
+		.stdout(Stdio::piped())
+		.stderr(Stdio::inherit())
+		.spawn().unwrap_or_else(|err| {
+			println!("Unable to start plugin {}! Additional info below:\n{}", plugin, err);
+			exit(exitcode::OSERR);
+		})
+}
+
 fn init_plugins(hook: &str, config: &Config) {
 	config.plugins.plugins_list.par_iter().for_each(|plugin| {
-		let exit_status = Command::new(PathBuf::from(plugin).canonicalize().unwrap_or_else(|err| {
-			println!("Unable to find plugin {}! Additional info below.\n{}", plugin, err);
-			exit(exitcode::NOINPUT);
-		}))
-			.arg(hook)
-			.stdin(Stdio::piped())
-			.stdout(Stdio::piped())
-			.status().unwrap_or_else(|err| {
-				println!("Unable to start plugin {}! Additional info below.\n{}", plugin, err);
-				exit(exitcode::OSERR);
-			});
-
+		let exit_status = create_plugin_process(plugin, hook).wait().unwrap();
 		if !exit_status.success() {
 			println!("Warn: Plugin {} returned a non-zero exit code during init.", plugin);
 		}
@@ -59,11 +60,7 @@ fn init_plugins(hook: &str, config: &Config) {
 
 fn run_plugins(mut input: std::vec::Vec<u8>, hook: &str, config: &Config) -> Result<std::vec::Vec<u8>, Box<dyn std::error::Error>> {
 	for plugin in &config.plugins.plugins_list {
-		let mut child = Command::new(PathBuf::from(plugin).canonicalize()?)
-			.arg(hook)
-			.stdin(Stdio::piped())
-			.stdout(Stdio::piped())
-			.spawn()?;
+		let mut child = create_plugin_process(plugin, hook);
 
 		if child.stdin.as_mut().unwrap().write_all(&input).is_err() {
 			continue
