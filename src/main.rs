@@ -14,7 +14,7 @@ use comrak::{markdown_to_html, ComrakOptions};
 use glob::glob;
 use rayon::prelude::*;
 use serde_derive::Deserialize;
-use std::{string::String, path::PathBuf, fs, fs::File, io::Write, process::{exit, Command, Stdio}};
+use std::{string::String, path::PathBuf, fs, io::Write, process::{exit, Command, Stdio}};
 
 #[derive(Deserialize)]
 struct Config {
@@ -81,11 +81,11 @@ fn run_plugins(mut input: std::vec::Vec<u8>, hook: &str, config: &Config) -> Res
 	Ok(input)
 }
 
-fn parse_to_html(mut markdown_input: String, config: &Config) -> Result<std::vec::Vec<u8>, Box<dyn std::error::Error>> {
-	let plugin_output = run_plugins(markdown_input.as_bytes().to_vec(), "markdown", config)?;
-	markdown_input = String::from_utf8_lossy(&plugin_output).to_string();
+fn parse_to_html(raw_input: std::vec::Vec<u8>, config: &Config) -> Result<std::vec::Vec<u8>, Box<dyn std::error::Error>> {
+	let plugin_output = run_plugins(raw_input, "markdown", config)?;
+	let markdown_input = String::from_utf8_lossy(&plugin_output).to_string();
 
-	let html_output = markdown_to_html(&markdown_input, &ComrakOptions {
+	let mut html_output = markdown_to_html(&markdown_input, &ComrakOptions {
 		hardbreaks: config.markdown.convert_line_breaks,
 		smart: config.markdown.convert_punctuation,
 		github_pre_lang: true, // The lang tag makes a lot more sense than the class tag for <code> elements.
@@ -101,21 +101,13 @@ fn parse_to_html(mut markdown_input: String, config: &Config) -> Result<std::vec
 		ext_header_ids: None,
 		ext_footnotes: config.markdown.enable_comrak_extensions,
 		ext_description_lists: config.markdown.enable_comrak_extensions,
-        }).as_bytes().to_vec();
+        });
 
-	run_plugins(html_output, "html", config)
-}
-
-fn load_parse_write(fpath: &std::path::Path, config: &Config) -> Result<(), Box<dyn std::error::Error>> {
-	let markdown_input = fs::read_to_string(&fpath)?;
-	let html_output = parse_to_html(markdown_input, config)?;
-
-	let mut file = File::create(fpath.with_extension("html"))?;
 	if config.plugins.enable_core {
-		file.write_all(b"<!doctype html><meta name=viewport content=\"width=device-width,initial-scale=1\">")?;
+		html_output += "<!doctype html><meta name=viewport content=\"width=device-width,initial-scale=1\">";
 	}
-	file.write_all(&html_output)?;
-	Ok(())
+
+	run_plugins(html_output.as_bytes().to_vec(), "html", config)
 }
 
 fn main() {
@@ -129,15 +121,30 @@ fn main() {
 		exit(exitcode::CONFIG);
 	});
 
+	println!("Initializing plugins...");
 	init_plugins("config", &config);
 
-	// This *should* never give an error, so using unwrap() here is fine.
-	let files = glob("./*.md").unwrap().par_bridge();
-
+	let files = glob("./*.md").unwrap().par_bridge(); // Should never give an error, so we can safely use unwrap().
 	files.filter_map(Result::ok).for_each(|fpath| {
 		println!("Parsing {}...", fpath.to_string_lossy());
-		if let Err(err) = load_parse_write(&fpath, &config) {
-			println!("Unable to parse {}! Additional info below:\n{:#?}", fpath.to_string_lossy(), err);
-		}
+		let raw_input = fs::read(&fpath).unwrap_or_else(|_| {
+			println!("Unable to read {:#?}!", &fpath);
+			exit(exitcode::NOINPUT);
+		});
+
+		let output = parse_to_html(raw_input, &config).unwrap_or_else(|err| {
+			println!("Warn: Unable to parse {:#?}! Additional info below:\n{:#?}", &fpath, err);
+			Vec::new()
+		});
+		if output.is_empty() {return}
+
+		let output_name = fpath.with_extension("html");
+		fs::write(&output_name, output).unwrap_or_else(|_| {
+			println!("Unable to create {:#?}!", &output_name);
+			exit(exitcode::CANTCREAT);
+		});
 	});
+
+	println!("Finishing up...");
+	init_plugins("postconfig", &config);
 }
