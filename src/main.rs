@@ -86,7 +86,7 @@ fn parse_to_html(raw_input: std::vec::Vec<u8>, config: &Config) -> std::vec::Vec
 	let plugin_output = run_plugins(raw_input, "markdown", config);
 	let markdown_input = String::from_utf8_lossy(&plugin_output).to_string();
 
-	let mut html_output = markdown_to_html(&markdown_input, &ComrakOptions {
+	let html_output = markdown_to_html(&markdown_input, &ComrakOptions {
 		hardbreaks: config.markdown.convert_line_breaks,
 		smart: config.markdown.convert_punctuation,
 		github_pre_lang: true, // The lang tag makes a lot more sense than the class tag for <code> elements.
@@ -104,11 +104,13 @@ fn parse_to_html(raw_input: std::vec::Vec<u8>, config: &Config) -> std::vec::Vec
 		ext_description_lists: config.markdown.enable_comrak_extensions,
         });
 
+	let mut plugin_output = run_plugins(html_output.as_bytes().to_vec(), "html", config);
+
 	if config.plugins.enable_core {
-		html_output = ["<!doctype html><meta name=viewport content=\"width=device-width,initial-scale=1\">".to_string(), html_output].concat();
+		plugin_output = ["<!doctype html><meta name=viewport content=\"width=device-width,initial-scale=1\">".as_bytes().to_vec(), plugin_output].concat();
 	}
 
-	run_plugins(html_output.as_bytes().to_vec(), "html", config)
+	plugin_output
 }
 
 fn main() {
