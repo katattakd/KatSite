@@ -7,5 +7,5 @@ enable_comrak_extensions = true # Enable Comrak markdown extensions (superscript
 
 [plugins] # KatSite plugin settings
 enable_core = true # Core is a built-in plugin that adds a doctype and viewport, and should not be disabled unless necessary.
-plugins_list = ["basic-navbar.sh", "basic-theme.sh", "minifier.sh"] # Load built-in plugins in this order.
+plugins_list = ["navbar-simple.sh", "theme-basic.sh", "minifier.sh"] # Load built-in plugins in this order.
 
