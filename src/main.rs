@@ -14,7 +14,7 @@ use comrak::{markdown_to_html, ComrakOptions};
 use glob::glob;
 use rayon::prelude::*;
 use serde_derive::Deserialize;
-use std::{string::String, path::PathBuf, fs, io::Write, process::{exit, Command, Stdio, Child}};
+use std::{string::String, path::PathBuf, fs, io::Write, process::{exit, Command, Stdio, Output}};
 
 #[derive(Deserialize)]
 struct Config {
@@ -37,8 +37,8 @@ struct Plugins {
 	plugins_list: Vec<String>,
 }
 
-fn create_plugin_process(plugin: &str, hook: &str) -> Child {
-	Command::new(PathBuf::from("plugins/").join(plugin))
+fn run_plugin(plugin: &str, hook: &str, input: Option<std::vec::Vec<u8>>) -> Output {
+	let mut child = Command::new(PathBuf::from("plugins/").join(plugin))
 		.arg(hook)
 		.stdin(Stdio::piped())
 		.stdout(Stdio::piped())
@@ -46,27 +46,31 @@ fn create_plugin_process(plugin: &str, hook: &str) -> Child {
 		.spawn().unwrap_or_else(|err| {
 			println!("Unable to start plugin {}! Additional info below:\n{}", plugin, err);
 			exit(exitcode::OSERR);
-		})
+		});
+
+	if let Some(raw_input) = input {
+		// TODO: Check if it's possible for this unwrap() call to fail.
+		let _ = child.stdin.as_mut().unwrap().write_all(&raw_input);
+	}
+
+	child.wait_with_output().unwrap_or_else(|err| {
+		println!("Unable to get output of plugin {}! Additional info below:\n{}", plugin, err);
+		exit(exitcode::OSERR);
+	})
 }
 
 fn init_plugins(hook: &str, config: &Config) {
 	config.plugins.plugins_list.par_iter().for_each(|plugin| {
-		let exit_status = create_plugin_process(plugin, hook).wait().unwrap();
+		let exit_status = run_plugin(plugin, hook, None).status;
 		if !exit_status.success() {
 			println!("Warn: Plugin {} returned a non-zero exit code during init.", plugin);
 		}
 	});
 }
 
-fn run_plugins(mut input: std::vec::Vec<u8>, hook: &str, config: &Config) -> Result<std::vec::Vec<u8>, Box<dyn std::error::Error>> {
+fn run_plugins(mut input: std::vec::Vec<u8>, hook: &str, config: &Config) -> std::vec::Vec<u8> {
 	for plugin in &config.plugins.plugins_list {
-		let mut child = create_plugin_process(plugin, hook);
-
-		if child.stdin.as_mut().unwrap().write_all(&input).is_err() {
-			continue
-		}
-
-		let output = child.wait_with_output()?;
+		let output = run_plugin(plugin, hook, Some(input.to_owned()));
 		if output.status.success() {
 			if !output.stdout.is_empty() {
 				input = output.stdout;
@@ -75,11 +79,11 @@ fn run_plugins(mut input: std::vec::Vec<u8>, hook: &str, config: &Config) -> Res
 			println!("Warn: Plugin {} returned a non-zero exit code, discarding it's output...", plugin);
 		}
 	}
-	Ok(input)
+	input
 }
 
-fn parse_to_html(raw_input: std::vec::Vec<u8>, config: &Config) -> Result<std::vec::Vec<u8>, Box<dyn std::error::Error>> {
-	let plugin_output = run_plugins(raw_input, "markdown", config)?;
+fn parse_to_html(raw_input: std::vec::Vec<u8>, config: &Config) -> std::vec::Vec<u8> {
+	let plugin_output = run_plugins(raw_input, "markdown", config);
 	let markdown_input = String::from_utf8_lossy(&plugin_output).to_string();
 
 	let mut html_output = markdown_to_html(&markdown_input, &ComrakOptions {
@@ -129,11 +133,7 @@ fn main() {
 			exit(exitcode::NOINPUT);
 		});
 
-		let output = parse_to_html(raw_input, &config).unwrap_or_else(|err| {
-			println!("Warn: Unable to parse {:#?}! Additional info below:\n{:#?}", &fpath, err);
-			Vec::new()
-		});
-		if output.is_empty() {return}
+		let output = parse_to_html(raw_input, &config);
 
 		let output_name = fpath.with_extension("html");
 		fs::write(&output_name, output).unwrap_or_else(|_| {
