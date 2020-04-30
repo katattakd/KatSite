@@ -76,7 +76,7 @@ fn run_plugins(mut input: std::vec::Vec<u8>, hook: &str, config: &Config) -> std
 				input = output.stdout;
 			}
 		} else {
-			println!("Warn: Plugin {} returned a non-zero exit code, discarding it's output...", plugin);
+			println!("Warn: Plugin {} returned a non-zero exit code, discarding its output...", plugin);
 		}
 	}
 	input
