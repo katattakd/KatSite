@@ -15,7 +15,7 @@ use glob::glob;
 use pulldown_cmark::{Parser, html};
 use rayon::prelude::*;
 use serde_derive::Deserialize;
-use std::{thread, string::String, path::PathBuf, fs, fs::File, io::{copy, Error, Cursor, Read, Write, BufWriter}, process::{exit, Command, Stdio, Output}};
+use std::{thread, string::String, path::PathBuf, fs, fs::File, io::{Error, Read, Write, BufWriter}, process::{exit, Command, Stdio}};
 
 #[derive(Deserialize)]
 struct Config {
@@ -46,7 +46,7 @@ struct Plugins {
 	plugins_list: Vec<String>,
 }
 
-fn init_plugins(hook: &str, list: Vec<String>) {
+fn init_plugins(hook: &str, list: &[String]) {
 	list.par_iter().for_each(|plugin| {
 		let mut child = Command::new(PathBuf::from("plugins/").join(plugin))
 			.arg(hook)
@@ -61,7 +61,6 @@ fn init_plugins(hook: &str, list: Vec<String>) {
 	})
 }
 
-// TODO: Improve error handling
 fn run_plugins(mut buffer: &mut Vec<u8>, hook: &str, config: &Config) {
 	for plugin in &config.plugins.plugins_list {
 		let mut child = Command::new(PathBuf::from("plugins/").join(plugin))
@@ -75,7 +74,7 @@ fn run_plugins(mut buffer: &mut Vec<u8>, hook: &str, config: &Config) {
 			});
 
 		child.stdin.as_mut().unwrap()
-			.write_all(&buffer).unwrap_or_else(|_| {
+			.write_all(buffer).unwrap_or_else(|_| {
 				println!("Plugin {} crashed during usage!", plugin);
 				exit(exitcode::UNAVAILABLE);
 			});
@@ -132,12 +131,12 @@ fn parse_to_file(input: &mut Vec<u8>, output: &mut dyn Write, config: &Config) -
 	}
 
 	run_plugins(input, "markdown", config);
-	let mk_input = std::str::from_utf8(&input).unwrap_or_else(|_| {
+	let mk_input = std::str::from_utf8(input).unwrap_or_else(|_| {
 		println!("Invalid UTF-8 output from plugin!");
 		exit(exitcode::DATAERR);
 	});
 
-	markdown_to_html(&mk_input, &mut output, config)?;
+	markdown_to_html(mk_input, &mut output, config)?;
 
 	output.flush()
 }
@@ -165,7 +164,7 @@ fn main() {
 
 	let plugins_list = config.plugins.plugins_list.to_owned();
 	thread::spawn(move || {
-		init_plugins("init", plugins_list);
+		init_plugins("init", &plugins_list);
 	});
 
 	files.filter_map(Result::ok).for_each(|fpath| {
@@ -188,5 +187,5 @@ fn main() {
 	});
 
 	println!("Finishing up...");
-	init_plugins("postinit", config.plugins.plugins_list);
+	init_plugins("postinit", &config.plugins.plugins_list);
 }
