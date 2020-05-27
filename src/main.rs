@@ -15,7 +15,7 @@ use glob::glob;
 use pulldown_cmark::{Parser, html};
 use rayon::prelude::*;
 use serde_derive::Deserialize;
-use std::{string::String, path::PathBuf, fs, io::Write, process::{exit, Command, Stdio, Output}};
+use std::{thread, string::String, path::PathBuf, fs, fs::File, io::{copy, Error, Cursor, Read, Write, BufWriter}, process::{exit, Command, Stdio, Output}};
 
 #[derive(Deserialize)]
 struct Config {
@@ -46,65 +46,56 @@ struct Plugins {
 	plugins_list: Vec<String>,
 }
 
-fn run_plugin(plugin: &str, hook: &str, input: Option<std::vec::Vec<u8>>) -> Output {
-	let mut child = Command::new(PathBuf::from("plugins/").join(plugin))
-		.arg(hook)
-		.stdin(Stdio::piped())
-		.stdout(Stdio::piped())
-		.stderr(Stdio::inherit())
-		.spawn().unwrap_or_else(|err| {
-			println!("Unable to start plugin {}! Additional info below:\n{}", plugin, err);
-			exit(exitcode::OSERR);
-		});
-
-	if let Some(raw_input) = input {
-		// TODO: Check if it's possible for this unwrap() call to fail.
-		let _ = child.stdin.as_mut().unwrap().write_all(&raw_input);
-	}
-
-	child.wait_with_output().unwrap_or_else(|err| {
-		println!("Unable to get output of plugin {}! Additional info below:\n{}", plugin, err);
-		exit(exitcode::OSERR);
+fn init_plugins(hook: &str, list: Vec<String>) {
+	list.par_iter().for_each(|plugin| {
+		let mut child = Command::new(PathBuf::from("plugins/").join(plugin))
+			.arg(hook)
+			.stdin(Stdio::null())
+			.stdout(Stdio::null())
+			.stderr(Stdio::inherit())
+			.spawn().unwrap_or_else(|err| {
+				println!("Unable to start plugin {}! Additional info below:\n{}", plugin, err);
+				exit(exitcode::OSERR);
+			});
+		let _ = child.wait();
 	})
 }
 
-fn init_plugins(hook: &str, config: &Config) {
-	if config.plugins.plugins_list.is_empty() {
-		return
-	}
-	config.plugins.plugins_list.par_iter().for_each(|plugin| {
-		let exit_status = run_plugin(plugin, hook, None).status;
-		if !exit_status.success() {
-			println!("Warn: Plugin {} returned a non-zero exit code during init.", plugin);
-		}
-	});
-}
-
-fn run_plugins(mut input: std::vec::Vec<u8>, hook: &str, config: &Config) -> std::vec::Vec<u8> {
-	if config.plugins.plugins_list.is_empty() {
-		return input
-	}
+// TODO: Improve error handling
+fn run_plugins(mut buffer: &mut Vec<u8>, hook: &str, config: &Config) {
 	for plugin in &config.plugins.plugins_list {
-		let output = run_plugin(plugin, hook, Some(input.to_owned()));
-		if output.status.success() {
-			if !output.stdout.is_empty() {
-				input = output.stdout;
-			}
-		} else {
-			println!("Warn: Plugin {} returned a non-zero exit code, discarding it's output...", plugin);
-		}
+		let mut child = Command::new(PathBuf::from("plugins/").join(plugin))
+			.arg(hook)
+			.stdin(Stdio::piped())
+			.stdout(Stdio::piped())
+			.stderr(Stdio::inherit())
+			.spawn().unwrap_or_else(|err| {
+				println!("Unable to start plugin {}! Additional info below:\n{}", plugin, err);
+				exit(exitcode::UNAVAILABLE);
+			});
+
+		child.stdin.as_mut().unwrap()
+			.write_all(&buffer).unwrap_or_else(|_| {
+				println!("Plugin {} crashed during usage!", plugin);
+				exit(exitcode::UNAVAILABLE);
+			});
+
+		buffer.clear();
+		drop(child.stdin.take());
+
+		child.stdout.as_mut().unwrap()
+			.read_to_end(&mut buffer).unwrap_or_else(|_| {
+				println!("Plugin {} crashed during usage!", plugin);
+				exit(exitcode::UNAVAILABLE);
+			});
+
+		let _ = child.kill();
 	}
-	input
 }
 
-fn parse_to_html(raw_input: std::vec::Vec<u8>, config: &Config) -> std::vec::Vec<u8> {
-	let plugin_output = run_plugins(raw_input, "markdown", config);
-	let markdown_input = &String::from_utf8_lossy(&plugin_output);
-	
-	let mut html_output: Vec<u8> = Vec::new();
-
+fn markdown_to_html(input: &str, output: &mut dyn Write, config: &Config) -> Result<(), Error> {
 	if config.markdown.filter_html_tags || config.markdown.convert_line_breaks || config.markdown.convert_punctuation || config.markdown.enable_github_extensions || config.markdown.enable_comrak_extensions || !config.markdown.enable_raw_html_inlining {
-		let arena = Arena::new();
+		let arena = &Arena::new();
 		let options = &ComrakOptions {
 			hardbreaks: config.markdown.convert_line_breaks,
 			smart: config.markdown.convert_punctuation,
@@ -122,14 +113,33 @@ fn parse_to_html(raw_input: std::vec::Vec<u8>, config: &Config) -> std::vec::Vec
 			ext_footnotes: config.markdown.enable_comrak_extensions,
 			ext_description_lists: config.markdown.enable_comrak_extensions,
 		};
-		let root = parse_document(&arena, markdown_input, options);
-		format_html(root, options, &mut html_output).unwrap();
+		let root = parse_document(arena, input, options);
+		format_html(root, options, output)
 	} else {
-		let parser = Parser::new(markdown_input);
-		html::write_html(&mut html_output, parser).unwrap();
-	};
+		let parser = Parser::new(input);
+		html::write_html(output, parser)
+	}
+}
 
-	run_plugins(html_output, "html", config)
+// TODO: Improve error handling.
+fn parse_to_file(input: &mut Vec<u8>, output: &mut dyn Write, config: &Config) -> Result<(), Error> {
+	let mut output = BufWriter::new(output);
+	if config.html.append_5doctype {
+		output.write_all(b"<!doctype html>")?;
+	}
+	if config.html.append_viewport {
+		output.write_all(b"<meta name=viewport content=\"width=device-width,initial-scale=1\">")?;
+	}
+
+	run_plugins(input, "markdown", config);
+	let mk_input = std::str::from_utf8(&input).unwrap_or_else(|_| {
+		println!("Invalid UTF-8 output from plugin!");
+		exit(exitcode::DATAERR);
+	});
+
+	markdown_to_html(&mk_input, &mut output, config)?;
+
+	output.flush()
 }
 
 fn main() {
@@ -148,33 +158,35 @@ fn main() {
 		exit(exitcode::OSERR);
 	});
 
-	println!("Initializing plugins...");
-	init_plugins("config", &config);
+	let files = glob("./*.md").unwrap_or_else(|err| {
+		println!("Unable to create file glob! Additional info below:\n{:#?}", err);
+		exit(exitcode::SOFTWARE);
+	}).par_bridge();
 
-	let files = glob("./*.md").unwrap().par_bridge(); // Should never give an error, so we can safely use unwrap().
+	let plugins_list = config.plugins.plugins_list.to_owned();
+	thread::spawn(move || {
+		init_plugins("init", plugins_list);
+	});
+
 	files.filter_map(Result::ok).for_each(|fpath| {
 		println!("Parsing {}...", fpath.to_string_lossy());
-		let raw_input = fs::read(&fpath).unwrap_or_else(|_| {
-			println!("Unable to read {:#?}!", &fpath);
+		let mut input = fs::read(&fpath).unwrap_or_else(|_| {
+			println!("Unable to open {:#?}!", &fpath);
 			exit(exitcode::NOINPUT);
 		});
 
-		let output = parse_to_html(raw_input, &config);
-
 		let output_name = fpath.with_extension("html");
-		let mut f = fs::File::create(&output_name).unwrap_or_else(|_| {
+		let mut output = File::create(&output_name).unwrap_or_else(|_| {
 			println!("Unable to create {:#?}!", &output_name);
 			exit(exitcode::CANTCREAT);
 		});
-		if config.html.append_5doctype {
-			f.write(b"<!doctype html>").unwrap();
-		}
-		if config.html.append_viewport {
-			f.write(b"<meta name=viewport content=\"width=device-width,initial-scale=1\">").unwrap();
-		}
-		f.write(&output).unwrap();
+
+		parse_to_file(&mut input, &mut output, &config).unwrap_or_else(|_| {
+			println!("Unable to finish parsing {:#?}!", &fpath);
+			exit(exitcode::IOERR);
+		});
 	});
 
 	println!("Finishing up...");
-	init_plugins("postconfig", &config);
+	init_plugins("postinit", config.plugins.plugins_list);
 }
