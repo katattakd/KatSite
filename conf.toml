@@ -5,11 +5,11 @@
 # - Use as few plugins as possible.
 # - For advanced users:
 #   - If filter_*, convert_*, and enable_*_extensions is false, and enable_raw_* is true, KatSite will use a significantly faster parser (pulldown-cmark instead of comrak).
-#   - If no plugins are being loaded, KatSite will skip over plugin functions, and run significantly faster. Embedded use cases should manipulate the HTML after KatSite is finished running, instead of using the plugin system.
+#   - If no plugins are being loaded, KatSite will run significantly faster. Embedded use cases should manipulate the HTML after KatSite is finished running, instead of using the plugin system.
 #   - Try playing around with the thread_pool_size, to find the best value for your system.
 
 # Additional notes for advanced users:
-# - Changing the settings from defaults will likely break third-party plugins, even though they should work fine with the built-in plugins. Do not change them unless necessary.
+# - Changing the settings from defaults will likely break third-party plugins, even though most changes should work fine with the built-in plugins. Do not change them unless necessary.
 
 thread_pool_size = 0 # Limit the size of the thread pool. Setting this to zero will automatically determine the optimal number of threads.
 
@@ -26,5 +26,5 @@ append_5doctype = true # Append an HTML5 doctype to the final document.
 append_viewport = true # Append a responsive viewport tag to the final document.
 
 [plugins] # KatSite plugin settings.
-plugins_list = ["navbar-simple.sh", "theme-basic.sh", "minifier.sh"] # Load built-in plugins in this order.
+plugins_list = ["minifier.sh", "navbar-simple.sh", "theme-basic.sh"] # Load built-in plugins in this order.
 
