@@ -6,24 +6,28 @@
 extern crate comrak;
 extern crate exitcode;
 extern crate glob;
-extern crate minifier;
+extern crate pulldown_cmark;
 extern crate rayon;
 extern crate serde_derive;
 extern crate toml;
-use comrak::{markdown_to_html, ComrakOptions};
+use comrak::{Arena, parse_document, format_html, ComrakOptions};
 use glob::glob;
+use pulldown_cmark::{Parser, html};
 use rayon::prelude::*;
 use serde_derive::Deserialize;
 use std::{string::String, path::PathBuf, fs, io::Write, process::{exit, Command, Stdio, Output}};
 
 #[derive(Deserialize)]
 struct Config {
+	thread_pool_size: usize,
 	markdown: Markdown,
+	html: Html,
 	plugins: Plugins,
 }
 
 #[derive(Deserialize)]
 struct Markdown {
+	filter_html_tags: bool,
 	convert_line_breaks: bool,
 	convert_punctuation: bool,
 	enable_raw_html_inlining: bool,
@@ -32,8 +36,13 @@ struct Markdown {
 }
 
 #[derive(Deserialize)]
+struct Html {
+	append_5doctype: bool,
+	append_viewport: bool,
+}
+
+#[derive(Deserialize)]
 struct Plugins {
-	enable_core: bool,
 	plugins_list: Vec<String>,
 }
 
@@ -60,6 +69,9 @@ fn run_plugin(plugin: &str, hook: &str, input: Option<std::vec::Vec<u8>>) -> Out
 }
 
 fn init_plugins(hook: &str, config: &Config) {
+	if config.plugins.plugins_list.is_empty() {
+		return
+	}
 	config.plugins.plugins_list.par_iter().for_each(|plugin| {
 		let exit_status = run_plugin(plugin, hook, None).status;
 		if !exit_status.success() {
@@ -69,6 +81,9 @@ fn init_plugins(hook: &str, config: &Config) {
 }
 
 fn run_plugins(mut input: std::vec::Vec<u8>, hook: &str, config: &Config) -> std::vec::Vec<u8> {
+	if config.plugins.plugins_list.is_empty() {
+		return input
+	}
 	for plugin in &config.plugins.plugins_list {
 		let output = run_plugin(plugin, hook, Some(input.to_owned()));
 		if output.status.success() {
@@ -76,7 +91,7 @@ fn run_plugins(mut input: std::vec::Vec<u8>, hook: &str, config: &Config) -> std
 				input = output.stdout;
 			}
 		} else {
-			println!("Warn: Plugin {} returned a non-zero exit code, discarding its output...", plugin);
+			println!("Warn: Plugin {} returned a non-zero exit code, discarding it's output...", plugin);
 		}
 	}
 	input
@@ -84,33 +99,37 @@ fn run_plugins(mut input: std::vec::Vec<u8>, hook: &str, config: &Config) -> std
 
 fn parse_to_html(raw_input: std::vec::Vec<u8>, config: &Config) -> std::vec::Vec<u8> {
 	let plugin_output = run_plugins(raw_input, "markdown", config);
-	let markdown_input = String::from_utf8_lossy(&plugin_output).to_string();
+	let markdown_input = &String::from_utf8_lossy(&plugin_output);
+	
+	let mut html_output: Vec<u8> = Vec::new();
 
-	let html_output = markdown_to_html(&markdown_input, &ComrakOptions {
-		hardbreaks: config.markdown.convert_line_breaks,
-		smart: config.markdown.convert_punctuation,
-		github_pre_lang: true, // The lang tag makes a lot more sense than the class tag for <code> elements.
-		width: 0, // Ignored when generating HTML
-		default_info_string: None,
-		unsafe_: config.markdown.enable_raw_html_inlining,
-		ext_strikethrough: config.markdown.enable_github_extensions,
-		ext_tagfilter: false,
-		ext_table: config.markdown.enable_github_extensions,
-		ext_autolink: config.markdown.enable_github_extensions,
-		ext_tasklist: config.markdown.enable_github_extensions,
-		ext_superscript: config.markdown.enable_comrak_extensions,
-		ext_header_ids: None,
-		ext_footnotes: config.markdown.enable_comrak_extensions,
-		ext_description_lists: config.markdown.enable_comrak_extensions,
-        });
+	if config.markdown.filter_html_tags || config.markdown.convert_line_breaks || config.markdown.convert_punctuation || config.markdown.enable_github_extensions || config.markdown.enable_comrak_extensions || !config.markdown.enable_raw_html_inlining {
+		let arena = Arena::new();
+		let options = &ComrakOptions {
+			hardbreaks: config.markdown.convert_line_breaks,
+			smart: config.markdown.convert_punctuation,
+			github_pre_lang: true, // The lang tag makes a lot more sense than the class tag for <code> elements.
+			width: 0, // Ignored when generating HTML
+			default_info_string: None,
+			unsafe_: config.markdown.enable_raw_html_inlining,
+			ext_strikethrough: config.markdown.enable_github_extensions,
+			ext_tagfilter: config.markdown.filter_html_tags,
+			ext_table: config.markdown.enable_github_extensions,
+			ext_autolink: config.markdown.enable_github_extensions,
+			ext_tasklist: config.markdown.enable_github_extensions,
+			ext_superscript: config.markdown.enable_comrak_extensions,
+			ext_header_ids: None,
+			ext_footnotes: config.markdown.enable_comrak_extensions,
+			ext_description_lists: config.markdown.enable_comrak_extensions,
+		};
+		let root = parse_document(&arena, markdown_input, options);
+		format_html(root, options, &mut html_output).unwrap();
+	} else {
+		let parser = Parser::new(markdown_input);
+		html::write_html(&mut html_output, parser).unwrap();
+	};
 
-	let mut plugin_output = run_plugins(html_output.as_bytes().to_vec(), "html", config);
-
-	if config.plugins.enable_core {
-		plugin_output = ["<!doctype html><meta name=viewport content=\"width=device-width,initial-scale=1\">".as_bytes().to_vec(), plugin_output].concat();
-	}
-
-	plugin_output
+	run_plugins(html_output, "html", config)
 }
 
 fn main() {
@@ -122,6 +141,11 @@ fn main() {
 	let config: Config = toml::from_str(&config_input).unwrap_or_else(|err| {
 		println!("Unable to parse config file! Additional info below:\n{:#?}", err);
 		exit(exitcode::CONFIG);
+	});
+
+	rayon::ThreadPoolBuilder::new().num_threads(config.thread_pool_size).build_global().unwrap_or_else(|err| {
+		println!("Unable to create thread pool! Additional info below:\n{:#?}", err);
+		exit(exitcode::OSERR);
 	});
 
 	println!("Initializing plugins...");
@@ -138,10 +162,17 @@ fn main() {
 		let output = parse_to_html(raw_input, &config);
 
 		let output_name = fpath.with_extension("html");
-		fs::write(&output_name, output).unwrap_or_else(|_| {
+		let mut f = fs::File::create(&output_name).unwrap_or_else(|_| {
 			println!("Unable to create {:#?}!", &output_name);
 			exit(exitcode::CANTCREAT);
 		});
+		if config.html.append_5doctype {
+			f.write(b"<!doctype html>").unwrap();
+		}
+		if config.html.append_viewport {
+			f.write(b"<meta name=viewport content=\"width=device-width,initial-scale=1\">").unwrap();
+		}
+		f.write(&output).unwrap();
 	});
 
 	println!("Finishing up...");
