@@ -2,7 +2,8 @@
 set -euo pipefail
 STDIN=$(cat)
 
-[ "$1" != "html" ] && exit
+[ "$1" == "markdown" ] && echo "$STDIN"
+[ "$1" != "postinit" ] && exit
 
 type html-minifier-terser >/dev/null 2>&1 || {
 	printf "\nThe minifier plugin requires html-minifier-terser to be installed!
@@ -11,7 +12,7 @@ To install it, run the below command:
 	exit 1
 }
 
-echo "$STDIN" | html-minifier-terser \
+html-minifier-terser \
 	--case-sensitive \
 	--collapse-boolean-attributes \
 	--collapse-whitespace \
@@ -31,4 +32,10 @@ echo "$STDIN" | html-minifier-terser \
 	--sort-attributes \
 	--sort-class-name \
 	--trim-custom-fragments \
-	--use-short-doctype
+	--use-short-doctype \
+	--input-dir . \
+	--output-dir tmp \
+	--file-ext html
+
+mv tmp/* .
+rm -r tmp

@@ -4,7 +4,7 @@ STDIN=$(cat)
 
 [ "$1" != "markdown" ] && exit
 
-echo "[Home](index.html)"
+printf "\n[Home](index.html)\n"
 for file in *.md; do
 	document="${file%.*}"
 	[[ "$document" != "index" ]] && echo "[$document]($document.html)"
