@@ -1,0 +1,17 @@
+[package]
+name = "katsite-essentials"
+license = "MIT"
+version = "0.1.0"
+authors = ["katattakd <katattakd@pm.me>"]
+description = "Essential plugins for KatSite."
+repository = "https://github.com/katattakd/KatSite"
+edition = '2018'
+
+[dependencies]
+exitcode = "*"
+glob = "*"
+rayon = "*"
+serde = "*"
+serde_derive = "*"
+toml = "*"
+
