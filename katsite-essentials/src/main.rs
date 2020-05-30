@@ -27,6 +27,7 @@ struct ThemeConfig {
 #[derive(Deserialize)]
 struct Plugin {
 	theme: String,
+	theme_hometxt: String,
 	minifier: bool,
 }
 
@@ -41,15 +42,22 @@ fn load_config() -> Config {
 	})
 }
 
-fn render_navbar(navtype: usize) {
+fn render_navbar(navtype: usize, input_filename: String, hometext: String) {
 	if navtype == 0 {
 		return
 	}
 
-	println!("{}", match navtype {
-		1 => "\n[Home](index.html)",
-		_ => "<nav>\n\n[Home](index.html)",
-	});
+	if navtype >= 2 {
+		println!("<nav>");
+	}
+
+	if navtype == 1 {
+		println!("\n[{}](index.html)", hometext);
+	} else if input_filename == "index.md" {
+		println!("<a class=active href=index.html>\n\n{}\n\n</a>", hometext);
+	} else {
+		println!("<a href=index.html>\n\n{}\n\n</a>", hometext);
+	}
 
 	for file in glob("./*.md").unwrap() {
 		let file = file.unwrap();
@@ -57,18 +65,24 @@ fn render_navbar(navtype: usize) {
 		if filepath.to_string_lossy() == "index.html" {
 			continue
 		}
-		let filename = file.file_stem().unwrap_or_else(|| file.extension().unwrap()).to_string_lossy();
 
-		if navtype >= 2 {
-			println!("");
+		let filename = file.file_stem().unwrap_or_else(|| file.extension().unwrap()).to_string_lossy();
+		
+		if [&filename, ".md"].concat() == input_filename && navtype >= 2 {
+			println!("<a class=active href=\"{}\"><p>{}</p></a>", filepath.to_string_lossy(), filename);
+			continue
 		}
 
-		println!("[{}]({})", filename, filepath.to_string_lossy());
+		if navtype >= 2 {
+			println!("<a href=\"{}\"><p>{}</p></a>", filepath.to_string_lossy(), filename);
+		} else {
+			println!("[{}]({})", filename, filepath.to_string_lossy());
+		}
 	}
 
 	println!("{}", match navtype {
 		1 => "\n---\n",
-		_ => "\n</nav>\n",
+		_ => "</nav>\n",
 	});
 }
 
@@ -92,6 +106,7 @@ fn main() {
 	match command {
 		Some(x) if x == "markdown" => {
 			let config = load_config();
+			let file = env::args().nth(2).unwrap();
 
 			let mut stdin = Vec::new();
 			io::stdin().lock().read_to_end(&mut stdin).unwrap();
@@ -106,7 +121,7 @@ fn main() {
 			}
 
 			println!("{}\n", tconfig.append_top_html);
-			render_navbar(tconfig.layout_type);
+			render_navbar(tconfig.layout_type, file, config.katsite_essentials.theme_hometxt);
 
 			if tconfig.layout_type >= 4 && !tconfig.append_top_html.is_empty() {
 				println!("\n</header>");
