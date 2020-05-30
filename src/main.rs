@@ -51,7 +51,7 @@ fn init_plugins(hook: &str, list: &[String]) {
 		let mut child = Command::new(PathBuf::from("plugins/").join(plugin))
 			.arg(hook)
 			.stdin(Stdio::null())
-			.stdout(Stdio::null())
+			.stdout(Stdio::inherit())
 			.stderr(Stdio::inherit())
 			.spawn().unwrap_or_else(|err| {
 				println!("Unable to start plugin {}! Additional info below:\n{}", plugin, err);
@@ -163,8 +163,8 @@ fn main() {
 	}).par_bridge();
 
 	let plugins_list = config.plugins.plugins_list.to_owned();
-	thread::spawn(move || {
-		init_plugins("init", &plugins_list);
+	let child = thread::spawn(move || {
+		init_plugins("asyncinit", &plugins_list);
 	});
 
 	files.filter_map(Result::ok).for_each(|fpath| {
@@ -188,4 +188,5 @@ fn main() {
 
 	println!("Finishing up...");
 	init_plugins("postinit", &config.plugins.plugins_list);
+	let _ = child.join();
 }
