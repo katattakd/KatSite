@@ -61,10 +61,11 @@ fn init_plugins(hook: &str, list: &[String]) {
 	})
 }
 
-fn run_plugins(mut buffer: &mut Vec<u8>, hook: &str, config: &Config) {
+fn run_plugins(mut buffer: &mut Vec<u8>, hook: &str, filename: &str, config: &Config) {
 	for plugin in &config.plugins.plugins_list {
 		let mut child = Command::new(PathBuf::from("plugins/").join(plugin))
 			.arg(hook)
+			.arg(filename)
 			.stdin(Stdio::piped())
 			.stdout(Stdio::piped())
 			.stderr(Stdio::inherit())
@@ -121,7 +122,7 @@ fn markdown_to_html(input: &str, output: &mut dyn Write, config: &Config) -> Res
 }
 
 // TODO: Improve error handling.
-fn parse_to_file(input: &mut Vec<u8>, output: &mut dyn Write, config: &Config) -> Result<(), Error> {
+fn parse_to_file(input: &mut Vec<u8>, output: &mut dyn Write, filename: &str, config: &Config) -> Result<(), Error> {
 	let mut output = BufWriter::new(output);
 	if config.html.append_5doctype {
 		output.write_all(b"<!doctype html>")?;
@@ -130,7 +131,7 @@ fn parse_to_file(input: &mut Vec<u8>, output: &mut dyn Write, config: &Config) -
 		output.write_all(b"<meta name=viewport content=\"width=device-width,initial-scale=1\">")?;
 	}
 
-	run_plugins(input, "markdown", config);
+	run_plugins(input, "markdown", filename, config);
 	let mk_input = std::str::from_utf8(input).unwrap_or_else(|_| {
 		println!("Invalid UTF-8 output from plugin!");
 		exit(exitcode::DATAERR);
@@ -168,7 +169,9 @@ fn main() {
 	});
 
 	files.filter_map(Result::ok).for_each(|fpath| {
-		println!("Parsing {}...", fpath.to_string_lossy());
+		let input_name = fpath.to_string_lossy();
+
+		println!("Parsing {}...", input_name);
 		let mut input = fs::read(&fpath).unwrap_or_else(|_| {
 			println!("Unable to open {:#?}!", &fpath);
 			exit(exitcode::NOINPUT);
@@ -180,7 +183,7 @@ fn main() {
 			exit(exitcode::CANTCREAT);
 		});
 
-		parse_to_file(&mut input, &mut output, &config).unwrap_or_else(|_| {
+		parse_to_file(&mut input, &mut output, &input_name, &config).unwrap_or_else(|_| {
 			println!("Unable to finish parsing {:#?}!", &fpath);
 			exit(exitcode::IOERR);
 		});
