@@ -26,5 +26,9 @@ append_5doctype = true # Append an HTML5 doctype to the final document.
 append_viewport = true # Append a responsive viewport tag to the final document.
 
 [plugins] # KatSite plugin settings.
-plugins_list = ["minifier.sh", "navbar-simple.sh", "theme-basic.sh"] # Load built-in plugins in this order.
+plugins_list = ["katsite-essentials"] # Load plugins in this order.
+
+[katsite_essentials] # Settings for the katsite-essentials plugin
+theme = "basic" # Load the "basic" theme. Set this to "none" to disable theming.
+minifier = true # Minify output HTML.
 
