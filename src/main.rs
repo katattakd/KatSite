@@ -1,7 +1,7 @@
-#![deny(clippy::nursery)]
-#![deny(clippy::pedantic)]
+#![warn(clippy::nursery)]
+#![warn(clippy::pedantic)]
 #![allow(clippy::cargo)]
-#![deny(clippy::all)]
+#![warn(clippy::all)]
 
 extern crate comrak;
 extern crate exitcode;
