@@ -55,7 +55,7 @@ fn init_plugins(hook: &str, list: &[String]) {
 			.stdout(Stdio::inherit())
 			.stderr(Stdio::inherit())
 			.spawn().unwrap_or_else(|err| {
-				println!("Unable to start plugin {}! Additional info below:\n{}", plugin, err);
+				eprintln!("Unable to start plugin {}! Additional info below:\n{}", plugin, err);
 				exit(exitcode::OSERR);
 			});
 		let _ = child.wait();
@@ -71,13 +71,13 @@ fn run_plugins(mut buffer: &mut Vec<u8>, hook: &str, filename: &str, config: &Co
 			.stdout(Stdio::piped())
 			.stderr(Stdio::inherit())
 			.spawn().unwrap_or_else(|err| {
-				println!("Unable to start plugin {}! Additional info below:\n{}", plugin, err);
+				eprintln!("Unable to start plugin {}! Additional info below:\n{}", plugin, err);
 				exit(exitcode::UNAVAILABLE);
 			});
 
 		child.stdin.as_mut().unwrap()
 			.write_all(buffer).unwrap_or_else(|_| {
-				println!("Plugin {} crashed during usage!", plugin);
+				eprintln!("Plugin {} crashed during usage!", plugin);
 				exit(exitcode::UNAVAILABLE);
 			});
 
@@ -86,7 +86,7 @@ fn run_plugins(mut buffer: &mut Vec<u8>, hook: &str, filename: &str, config: &Co
 
 		child.stdout.as_mut().unwrap()
 			.read_to_end(&mut buffer).unwrap_or_else(|_| {
-				println!("Plugin {} crashed during usage!", plugin);
+				eprintln!("Plugin {} crashed during usage!", plugin);
 				exit(exitcode::UNAVAILABLE);
 			});
 
@@ -139,7 +139,7 @@ fn parse_to_file(input: &mut Vec<u8>, output: &mut dyn Write, filename: &str, co
 
 	run_plugins(input, "markdown", filename, config);
 	let mk_input = std::str::from_utf8(input).unwrap_or_else(|_| {
-		println!("Invalid UTF-8 output from plugin!");
+		eprintln!("Invalid UTF-8 output from plugin!");
 		exit(exitcode::DATAERR);
 	});
 
@@ -151,21 +151,21 @@ fn parse_to_file(input: &mut Vec<u8>, output: &mut dyn Write, filename: &str, co
 fn main() {
 	println!("Loading config...");
 	let config_input = fs::read_to_string("conf.toml").unwrap_or_else(|_| {
-		println!("Unable to read config file!");
+		eprintln!("Unable to read config file!");
 		exit(exitcode::NOINPUT);
 	});
 	let config: Config = toml::from_str(&config_input).unwrap_or_else(|err| {
-		println!("Unable to parse config file! Additional info below:\n{:#?}", err);
+		eprintln!("Unable to parse config file! Additional info below:\n{:#?}", err);
 		exit(exitcode::CONFIG);
 	});
 
 	rayon::ThreadPoolBuilder::new().num_threads(config.thread_pool_size).build_global().unwrap_or_else(|err| {
-		println!("Unable to create thread pool! Additional info below:\n{:#?}", err);
+		eprintln!("Unable to create thread pool! Additional info below:\n{:#?}", err);
 		exit(exitcode::OSERR);
 	});
 
 	let files = glob("./*.md").unwrap_or_else(|err| {
-		println!("Unable to create file glob! Additional info below:\n{:#?}", err);
+		eprintln!("Unable to create file glob! Additional info below:\n{:#?}", err);
 		exit(exitcode::SOFTWARE);
 	}).par_bridge();
 
@@ -179,18 +179,18 @@ fn main() {
 
 		println!("Parsing {}...", input_name);
 		let mut input = fs::read(&fpath).unwrap_or_else(|_| {
-			println!("Unable to open {:#?}!", &fpath);
+			eprintln!("Unable to open {:#?}!", &fpath);
 			exit(exitcode::NOINPUT);
 		});
 
 		let output_name = fpath.with_extension("html");
 		let mut output = File::create(&output_name).unwrap_or_else(|_| {
-			println!("Unable to create {:#?}!", &output_name);
+			eprintln!("Unable to create {:#?}!", &output_name);
 			exit(exitcode::CANTCREAT);
 		});
 
 		parse_to_file(&mut input, &mut output, &input_name, &config).unwrap_or_else(|_| {
-			println!("Unable to finish parsing {:#?}!", &fpath);
+			eprintln!("Unable to finish parsing {:#?}!", &fpath);
 			exit(exitcode::IOERR);
 		});
 	});
