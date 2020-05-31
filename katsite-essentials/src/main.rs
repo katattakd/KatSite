@@ -6,12 +6,14 @@
 extern crate exitcode;
 extern crate glob;
 extern crate htmlescape;
+extern crate liquid;
 extern crate serde_derive;
 extern crate toml;
 use glob::glob;
 use htmlescape::{encode_minimal, encode_attribute};
-use serde_derive::Deserialize;
-use std::{env, fs, io, io::{Read, Write}, process::exit};
+use liquid::ParserBuilder;
+use serde_derive::{Serialize, Deserialize};
+use std::{env, fs, io, time::UNIX_EPOCH, io::Read, process::exit, path::Path};
 
 #[derive(Deserialize)]
 struct Config {
@@ -32,6 +34,33 @@ struct Plugin {
 	theme_hometxt: String,
 	minifier: bool,
 }
+
+#[derive(Serialize)]
+struct Page {
+	modified_time: u64,
+	name: String,
+	basename: String,
+}
+
+#[derive(Serialize)]
+struct Site {
+	custom_css: Vec<String>,
+	pages: Vec<Page>,
+}
+
+static CSS_LOADER: &str = "{% for file in site.custom_css %}<link rel=stylesheet href=\"themes/{{ file }}\">{% endfor %}\n\n";
+static BASIC_NAVBAR: &str = "\n
+[Home](index.html){% for page in site.pages %}{% if page.basename == \"index\" %}{% continue %}{% endif %}
+[{{ page.basename }}]({{ page.name }}){% endfor %}
+
+---";
+static COMPLEX_NAVBAR: &str = "\n
+<nav>
+{% if page.basename == \"index\" %}<a class=active id=home href=index.html><p>Home</p></a>{% else %}<a id=home href=index.html><p>Home</p></a>{% endif %}
+{% for page_ in site.pages %}{% if page_.basename == \"index\" %}{% continue %}{% endif %}{% if page_.name == page.name %}<a class=active href=\"{{ page_.name }}\"><p>{{ page_.basename }}</p></a>{% else %}<a href=\"{{ page_.name }}\"><p>{{ page_.basename }}</p></a>
+{% endif %}{% endfor %}
+</nav>\n\n";
+
 
 fn load_config() -> Config {
 	let config_input = fs::read_to_string("conf.toml").unwrap_or_else(|_| {
@@ -66,90 +95,97 @@ fn load_theme_config(theme: &str) -> ThemeConfig {
 	}
 }
 
-fn render_navbar(navtype: usize, input_filename: &str, hometext: &str) {
-	match navtype {
-		0 => return,
-		1 => println!("[{}](index.html)", htmlescape::encode_minimal(hometext)),
-		_ => {
-			println!("<nav>");
-			if input_filename == "index.md" {
-				print!("<a class=active ");
-			} else {
-				print!("<a ");
-			}
-			println!("id=home href=index.html><p>{}</p></a>", hometext); // Hometext is purposely unescaped.
-		}
+// TODO: Improve error handling.
+fn load_pageinfo<P: AsRef<Path>>(path: P) -> Page {
+	let file = &path.as_ref();
+	Page {
+		modified_time: {
+			fs::metadata(file).unwrap()
+				.modified().unwrap()
+				.duration_since(UNIX_EPOCH).unwrap()
+				.as_secs()
+		},
+		name: {
+			htmlescape::encode_attribute(
+				&file.with_extension("html")
+					.file_name().unwrap().to_string_lossy()
+			)
+		},
+		basename: {
+			htmlescape::encode_minimal(
+				&file.file_stem().unwrap().to_string_lossy()
+			)
+		},
 	}
+}
 
+fn load_siteinfo(themeconfig: ThemeConfig) -> Site {
 	let files = glob("./*.md").unwrap_or_else(|err| {
 		eprintln!("Unable to create file glob! Additional info below:\n{:#?}", err);
 		exit(exitcode::SOFTWARE);
 	});
 
+	let mut pages = Vec::new();
 	files.filter_map(Result::ok).for_each(|file| {
-		let hfile = file.with_extension("html");
-		let name = htmlescape::encode_minimal(
-			&hfile.file_stem().unwrap_or_else(||
-				file.extension().unwrap()
-			).to_string_lossy()
+		pages.push(
+			load_pageinfo(&file)
 		);
-		let path = htmlescape::encode_attribute(&hfile.to_string_lossy());
-
-		if name == "index" {
-			return
-		}
-
-		if navtype == 1 {
-			println!("[{}]({})", name, path)
-		} else {
-			if file.to_string_lossy() == input_filename {
-				print!("<a class=active ");
-			} else {
-				print!("<a ");
-			}
-			println!("href=\"{}\"><p>{}</p></a>", path, name);
-		}
 	});
 
-	println!("{}", if navtype == 1 {
-		"\n---\n"
-	} else {
-		"</nav>\n"
-	});
+	Site {
+		custom_css: themeconfig.css,
+		pages,
+	}
 }
 
-fn render_markdown_page(config: &Config, themeconfig: ThemeConfig, file: &str, data: &[u8]) {
-	for file in themeconfig.css {
-		println!("<link rel=stylesheet href=\"themes/{}\">", file);
-	}
+fn render_liquid(data: &str, site: &Site, page: &Page) {
+	let template = ParserBuilder::with_stdlib()
+		.build().unwrap()
+		.parse(data).unwrap();
 
-	if themeconfig.layout_type >= 4 && !themeconfig.append_top_html.is_empty() {
-		println!("<header>");
-	}
+	let globals = liquid::object!({
+		"page": page,
+		"site": site,
+	});
 
-	println!("{}\n", themeconfig.append_top_html);
+	template.render_to(&mut io::stdout().lock(), &globals).unwrap();
+}
 
-	render_navbar(themeconfig.layout_type, file, &config.katsite_essentials.theme_hometxt);
+fn render_markdown_page(config: &Config, themeconfig: ThemeConfig, file: &str, data: &str) {
+	let add_start = match themeconfig.layout_type {
+		0 => {
+			[CSS_LOADER, &themeconfig.append_top_html].concat()
+		}
+		1 => {
+			[CSS_LOADER, &themeconfig.append_top_html, BASIC_NAVBAR].concat()
+		}
+		2 => {
+			[CSS_LOADER, &themeconfig.append_top_html, COMPLEX_NAVBAR].concat()
+		}
+		(x) if themeconfig.append_top_html.is_empty() || x == 3 => {
+			[CSS_LOADER, &themeconfig.append_top_html, COMPLEX_NAVBAR, "<article>\n\n"].concat()
+		}
+		_ => {
+			[CSS_LOADER, "\n<header>\n", &themeconfig.append_top_html, COMPLEX_NAVBAR, "</header>\n<article>\n\n"].concat()
+		}
+	};
 
-	if themeconfig.layout_type >= 4 && !themeconfig.append_top_html.is_empty() {
-		println!("</header>");
-	}
+	let add_end = match themeconfig.layout_type {
+		0 | 1 | 2 => {
+			(&themeconfig.append_bottom_html).to_string()
+		},
+		(x) if themeconfig.append_bottom_html.is_empty() || x == 3 => {
+			["\n</article>\n", &themeconfig.append_bottom_html].concat()
+		}
+		_ => {
+			["\n</article>\n<footer>\n", &themeconfig.append_bottom_html, "\n</footer>"].concat()
+		},
+	};
 
-	if themeconfig.layout_type >= 3 {
-		println!("<article>\n");
-	}
+	let page = load_pageinfo(file);
+	let site = load_siteinfo(themeconfig);
 
-	io::stdout().lock().write_all(data).unwrap();
-
-	if themeconfig.layout_type >= 3 {
-		println!("\n</article>");
-	}
-
-	if themeconfig.layout_type >= 4 && !themeconfig.append_bottom_html.is_empty() {
-		println!("<footer>{}</footer>", themeconfig.append_bottom_html);
-	} else {
-		println!("{}", themeconfig.append_bottom_html);
-	}
+	render_liquid(&[&add_start, "\n\n", data, "\n\n", &add_end].concat(), &site, &page);
 }
 
 fn main() {
@@ -158,13 +194,13 @@ fn main() {
 
 	match command {
 		Some(x) if x == "markdown" => {
-			let mut stdin = Vec::new();
-			io::stdin().lock().read_to_end(&mut stdin).unwrap();
+			let mut input = String::new();
+			io::stdin().lock().read_to_string(&mut input).unwrap();
 
 			let config = load_config();
 			let themeconfig = load_theme_config(&config.katsite_essentials.theme);
 
-			render_markdown_page(&config, themeconfig, &file.unwrap(), &stdin);
+			render_markdown_page(&config, themeconfig, &file.unwrap(), &input);
 		},
 		Some(x) if x == "asyncinit" => {
 			exit(0);
