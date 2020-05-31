@@ -8,8 +8,11 @@ repository = "https://github.com/katattakd/KatSite"
 edition = '2018'
 
 [dependencies]
-exitcode = "*"
-glob = "*"
+exitcode = "=1.1.2"
+glob = "=0.3.0"
+htmlescape = "=0.3.1"
+hyperbuild = "*"
+liquid = "*"
 rayon = "*"
 serde = "*"
 serde_derive = "*"
