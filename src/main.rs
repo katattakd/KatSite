@@ -127,7 +127,6 @@ fn markdown_to_html(input: &str, output: &mut dyn Write, config: &Config) -> Res
 	}
 }
 
-// TODO: Improve error handling.
 fn parse_to_file(input: &mut Vec<u8>, output: &mut dyn Write, filename: &str, config: &Config) -> Result<(), Error> {
 	let mut output = BufWriter::new(output);
 	if config.html.append_5doctype {
@@ -138,12 +137,7 @@ fn parse_to_file(input: &mut Vec<u8>, output: &mut dyn Write, filename: &str, co
 	}
 
 	run_plugins(input, "markdown", filename, config);
-	let mk_input = std::str::from_utf8(input).unwrap_or_else(|_| {
-		eprintln!("Invalid UTF-8 output from plugin!");
-		exit(exitcode::DATAERR);
-	});
-
-	markdown_to_html(mk_input, &mut output, config)?;
+	markdown_to_html(&String::from_utf8_lossy(input), &mut output, config)?;
 
 	output.flush()
 }
