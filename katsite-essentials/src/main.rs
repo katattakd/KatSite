@@ -8,17 +8,20 @@ extern crate glob;
 extern crate htmlescape;
 extern crate hyperbuild;
 extern crate liquid;
+extern crate rayon;
 extern crate serde_derive;
 extern crate toml;
 use glob::glob;
 use htmlescape::{encode_minimal, encode_attribute};
 use hyperbuild::hyperbuild_truncate;
 use liquid::ParserBuilder;
+use rayon::prelude::*;
 use serde_derive::{Serialize, Deserialize};
 use std::{env, fs, io, time::UNIX_EPOCH, io::Read, process::exit, path::Path};
 
 #[derive(Deserialize)]
 struct Config {
+	thread_pool_size: usize,
 	katsite_essentials: Plugin,
 }
 
@@ -204,10 +207,15 @@ fn main() {
 				exit(0);
 			}
 
+			rayon::ThreadPoolBuilder::new().num_threads(config.thread_pool_size).build_global().unwrap_or_else(|err| {
+				eprintln!("Unable to create thread pool! Additional info below:\n{:#?}", err);
+				exit(exitcode::OSERR);
+			});
+
 			let files = glob("./*.html").unwrap_or_else(|err| {
 				eprintln!("Unable to create file glob! Additional info below:\n{:#?}", err);
 				exit(exitcode::SOFTWARE);
-			});
+			}).par_bridge();
 
 			files.filter_map(Result::ok).for_each(|fpath| {
 				println!("Minifying {}...", fpath.to_string_lossy());
