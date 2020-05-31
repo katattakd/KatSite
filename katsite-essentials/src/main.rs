@@ -75,8 +75,7 @@ fn load_theme_config(theme: &str) -> ThemeConfig {
 	} else {
 		let config_input = fs::read_to_string(["themes/theme-", theme, ".toml"].concat())
 			.unwrap_or_else(|_| [
-				"css=[\"theme-",
-				theme,
+				"css=[\"theme-", theme,
 				".css\"]\nlayout_type=1\nappend_top_html=\"\"\nappend_bottom_html=\"\""
 			].concat());
 		toml::from_str(&config_input).unwrap_or_else(|err| {
