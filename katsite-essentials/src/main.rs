@@ -17,7 +17,7 @@ use hyperbuild::hyperbuild_truncate;
 use liquid::ParserBuilder;
 use rayon::prelude::*;
 use serde_derive::{Serialize, Deserialize};
-use std::{env, fs, io, time::UNIX_EPOCH, io::Read, process::exit, path::Path};
+use std::{env, fs, io, ffi::OsStr, time::{Duration, UNIX_EPOCH}, io::Read, process::exit, path::Path};
 
 #[derive(Deserialize)]
 struct Config {
@@ -90,25 +90,29 @@ fn load_theme_config(theme: &str) -> ThemeConfig {
 	}
 }
 
-// TODO: Improve error handling.
 fn load_pageinfo<P: AsRef<Path>>(path: P) -> Page {
 	let file = &path.as_ref();
 	Page {
 		modified_time: {
-			fs::metadata(file).unwrap()
-				.modified().unwrap()
-				.duration_since(UNIX_EPOCH).unwrap()
+			if let Ok(meta) = file.metadata() {
+				meta.modified().unwrap_or(UNIX_EPOCH)
+				.duration_since(UNIX_EPOCH).unwrap_or_else(|_| Duration::new(0, 0))
 				.as_secs()
+			} else {
+				0
+			}
 		},
 		name: {
 			encode_attribute(
 				&file.with_extension("html")
-					.file_name().unwrap().to_string_lossy()
+					.file_name().unwrap_or_else(|| OsStr::new("")).to_string_lossy()
 			)
 		},
 		basename: {
 			encode_minimal(
-				&file.file_stem().unwrap().to_string_lossy()
+				&file.file_stem().unwrap_or_else(|| {
+					file.extension().unwrap_or_else(|| OsStr::new(".html"))
+				}).to_string_lossy()
 			)
 		},
 	}
@@ -136,15 +140,24 @@ fn load_siteinfo(config: Config, themeconfig: ThemeConfig) -> Site {
 
 fn render_liquid(data: &str, site: &Site, page: &Page) {
 	let template = ParserBuilder::with_stdlib()
-		.build().unwrap()
-		.parse(data).unwrap();
+		.build().unwrap_or_else(|err| {
+			eprintln!("Unable to create liquid parser! Additional info below:\n{:#?}", err);
+			exit(exitcode::SOFTWARE);
+		})
+		.parse(data).unwrap_or_else(|err| {
+			eprintln!("Unable to parse input! Additional info below:\n{:#?}", err);
+			exit(exitcode::DATAERR);
+		});
 
 	let globals = liquid::object!({
 		"page": page,
 		"site": site,
 	});
 
-	template.render_to(&mut io::stdout().lock(), &globals).unwrap();
+	template.render_to(&mut io::stdout().lock(), &globals).unwrap_or_else(|err| {
+		eprintln!("Unable to render liquid input! Additional info below:\n{:#?}", err);
+		exit(exitcode::DATAERR);
+	});
 }
 
 fn render_markdown_page(config: Config, themeconfig: ThemeConfig, file: &str, data: &str) {
@@ -226,7 +239,7 @@ fn main() {
 
 				hyperbuild_truncate(&mut input).unwrap_or_else(|err| {
 					eprintln!("Unable to minify {:#?}! Additional info below:\n{:#?}", &fpath, err);
-					exit(exitcode::CONFIG);
+					exit(exitcode::DATAERR);
 				});
 
 				fs::write(&fpath, input).unwrap_or_else(|_| {
