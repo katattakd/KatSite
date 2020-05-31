@@ -3,192 +3,233 @@
 #![allow(clippy::cargo)]
 #![warn(clippy::all)]
 
-extern crate comrak;
 extern crate exitcode;
 extern crate glob;
-extern crate pulldown_cmark;
-extern crate rayon;
+extern crate htmlescape;
+extern crate hyperbuild;
+extern crate liquid;
 extern crate serde_derive;
 extern crate toml;
-use comrak::{Arena, parse_document, format_html, ComrakOptions};
 use glob::glob;
-use pulldown_cmark::{Parser, html};
-use rayon::prelude::*;
-use serde_derive::Deserialize;
-use std::{thread, string::String, path::PathBuf, fs, fs::File, io::{Error, Read, Write, BufWriter}, process::{exit, Command, Stdio}};
+use htmlescape::{encode_minimal, encode_attribute};
+use hyperbuild::hyperbuild_truncate;
+use liquid::ParserBuilder;
+use serde_derive::{Serialize, Deserialize};
+use std::{env, fs, io, time::UNIX_EPOCH, io::Read, process::exit, path::Path};
 
 #[derive(Deserialize)]
 struct Config {
-	thread_pool_size: usize,
-	markdown: Markdown,
-	html: Html,
-	plugins: Plugins,
+	katsite_essentials: Plugin,
 }
 
 #[derive(Deserialize)]
-struct Markdown {
-	filter_html_tags: bool,
-	convert_line_breaks: bool,
-	convert_punctuation: bool,
-	enable_raw_html_inlining: bool,
-	enable_github_extensions: bool,
-	enable_comrak_extensions: bool,
+struct ThemeConfig {
+	css: Vec<String>,
+	layout_type: usize,
+	append_top_html: String,
+	append_bottom_html: String,
 }
 
 #[derive(Deserialize)]
-struct Html {
-	append_5doctype: bool,
-	append_viewport: bool,
-	create_header_anchors: bool,
+struct Plugin {
+	theme: String,
+	theme_hometxt: String,
+	minifier: bool,
 }
 
-#[derive(Deserialize)]
-struct Plugins {
-	plugins_list: Vec<String>,
+#[derive(Serialize)]
+struct Page {
+	modified_time: u64,
+	name: String,
+	basename: String,
 }
 
-fn init_plugins(hook: &str, list: &[String]) {
-	list.par_iter().for_each(|plugin| {
-		let mut child = Command::new(PathBuf::from("plugins/").join(plugin))
-			.arg(hook)
-			.stdin(Stdio::null())
-			.stdout(Stdio::inherit())
-			.stderr(Stdio::inherit())
-			.spawn().unwrap_or_else(|err| {
-				eprintln!("Unable to start plugin {}! Additional info below:\n{}", plugin, err);
-				exit(exitcode::OSERR);
-			});
-		let _ = child.wait();
+#[derive(Serialize)]
+struct Site {
+	custom_css: Vec<String>,
+	hometxt: String,
+	pages: Vec<Page>,
+}
+
+static CSS_LOADER: &str = "{% for file in site.custom_css %}<link rel=stylesheet href=\"themes/{{ file }}\">{% endfor %}\n\n";
+static BASIC_NAVBAR: &str = "\n\n[{{ site.hometxt }}](index.html){% for page in site.pages %}{% if page.basename == \"index\" %}{% continue %}{% endif %}\n[{{ page.basename }}]({{ page.name }}){% endfor %}\n\n---\n\n";
+static COMPLEX_NAVBAR: &str = "\n\n<nav>\n{% if page.basename == \"index\" %}<a class=active id=home href=index.html><p>{{ site.hometxt }}</p></a>{% else %}<a id=home href=index.html><p>{{ site.hometxt }}</p></a>{% endif %}\n{% for page_ in site.pages %}{% if page_.basename == \"index\" %}{% continue %}{% endif %}{% if page_.name == page.name %}<a class=active href=\"{{ page_.name }}\"><p>{{ page_.basename }}</p></a>{% else %}<a href=\"{{ page_.name }}\"><p>{{ page_.basename }}</p></a>\n{% endif %}{% endfor %}\n</nav>\n\n";
+
+fn load_config() -> Config {
+	let config_input = fs::read_to_string("conf.toml").unwrap_or_else(|_| {
+		eprintln!("Unable to read config file!");
+		exit(exitcode::NOINPUT)
+	});
+	toml::from_str(&config_input).unwrap_or_else(|err| {
+		eprintln!("Unable to parse config file! Additional info below:\n{:#?}", err);
+		exit(exitcode::CONFIG);
 	})
 }
 
-fn run_plugins(mut buffer: &mut Vec<u8>, hook: &str, filename: &str, config: &Config) {
-	for plugin in &config.plugins.plugins_list {
-		let mut child = Command::new(PathBuf::from("plugins/").join(plugin))
-			.arg(hook)
-			.arg(filename)
-			.stdin(Stdio::piped())
-			.stdout(Stdio::piped())
-			.stderr(Stdio::inherit())
-			.spawn().unwrap_or_else(|err| {
-				eprintln!("Unable to start plugin {}! Additional info below:\n{}", plugin, err);
-				exit(exitcode::UNAVAILABLE);
-			});
-
-		child.stdin.as_mut().unwrap()
-			.write_all(buffer).unwrap_or_else(|_| {
-				eprintln!("Plugin {} crashed during usage!", plugin);
-				exit(exitcode::UNAVAILABLE);
-			});
-
-		buffer.clear();
-		drop(child.stdin.take());
-
-		child.stdout.as_mut().unwrap()
-			.read_to_end(&mut buffer).unwrap_or_else(|_| {
-				eprintln!("Plugin {} crashed during usage!", plugin);
-				exit(exitcode::UNAVAILABLE);
-			});
-
-		let _ = child.kill();
-	}
-}
-
-fn markdown_to_html(input: &str, output: &mut dyn Write, config: &Config) -> Result<(), Error> {
-	if config.markdown.filter_html_tags || config.markdown.convert_line_breaks || config.markdown.convert_punctuation || config.markdown.enable_github_extensions || config.markdown.enable_comrak_extensions || !config.markdown.enable_raw_html_inlining || config.html.create_header_anchors {
-		let arena = &Arena::new();
-		let headerids = if config.html.create_header_anchors {
-			Some("".to_string())
-		} else {
-			None
-		};
-		let options = &ComrakOptions {
-			hardbreaks: config.markdown.convert_line_breaks,
-			smart: config.markdown.convert_punctuation,
-			github_pre_lang: true, // The lang tag makes a lot more sense than the class tag for <code> elements.
-			width: 0, // Ignored when generating HTML
-			default_info_string: None,
-			unsafe_: config.markdown.enable_raw_html_inlining,
-			ext_strikethrough: config.markdown.enable_github_extensions,
-			ext_tagfilter: config.markdown.filter_html_tags,
-			ext_table: config.markdown.enable_github_extensions,
-			ext_autolink: config.markdown.enable_github_extensions,
-			ext_tasklist: config.markdown.enable_github_extensions,
-			ext_superscript: config.markdown.enable_comrak_extensions,
-			ext_header_ids: headerids,
-			ext_footnotes: config.markdown.enable_comrak_extensions,
-			ext_description_lists: config.markdown.enable_comrak_extensions,
-		};
-		let root = parse_document(arena, input, options);
-		format_html(root, options, output)
+fn load_theme_config(theme: &str) -> ThemeConfig {
+	if theme == "none" {
+		ThemeConfig {
+			css: vec![],
+			layout_type: 0,
+			append_top_html: "".to_string(),
+			append_bottom_html: "".to_string(),
+		}
 	} else {
-		let parser = Parser::new(input);
-		html::write_html(output, parser)
+		let config_input = fs::read_to_string(["themes/theme-", theme, ".toml"].concat())
+			.unwrap_or_else(|_| [
+				"css=[\"theme-", theme,
+				".css\"]\nlayout_type=1\nappend_top_html=\"\"\nappend_bottom_html=\"\""
+			].concat());
+		toml::from_str(&config_input).unwrap_or_else(|err| {
+			eprintln!("Unable to parse theme config file! Additional info below:\n{:#?}", err);
+			exit(exitcode::CONFIG);
+		})
 	}
 }
 
-fn parse_to_file(input: &mut Vec<u8>, output: &mut dyn Write, filename: &str, config: &Config) -> Result<(), Error> {
-	let mut output = BufWriter::new(output);
-	if config.html.append_5doctype {
-		output.write_all(b"<!doctype html>")?;
+// TODO: Improve error handling.
+fn load_pageinfo<P: AsRef<Path>>(path: P) -> Page {
+	let file = &path.as_ref();
+	Page {
+		modified_time: {
+			fs::metadata(file).unwrap()
+				.modified().unwrap()
+				.duration_since(UNIX_EPOCH).unwrap()
+				.as_secs()
+		},
+		name: {
+			encode_attribute(
+				&file.with_extension("html")
+					.file_name().unwrap().to_string_lossy()
+			)
+		},
+		basename: {
+			encode_minimal(
+				&file.file_stem().unwrap().to_string_lossy()
+			)
+		},
 	}
-	if config.html.append_viewport {
-		output.write_all(b"<meta name=viewport content=\"width=device-width,initial-scale=1\">")?;
-	}
-
-	run_plugins(input, "markdown", filename, config);
-	markdown_to_html(&String::from_utf8_lossy(input), &mut output, config)?;
-
-	output.flush()
 }
 
-fn main() {
-	println!("Loading config...");
-	let config_input = fs::read_to_string("conf.toml").unwrap_or_else(|_| {
-		eprintln!("Unable to read config file!");
-		exit(exitcode::NOINPUT);
-	});
-	let config: Config = toml::from_str(&config_input).unwrap_or_else(|err| {
-		eprintln!("Unable to parse config file! Additional info below:\n{:#?}", err);
-		exit(exitcode::CONFIG);
-	});
-
-	rayon::ThreadPoolBuilder::new().num_threads(config.thread_pool_size).build_global().unwrap_or_else(|err| {
-		eprintln!("Unable to create thread pool! Additional info below:\n{:#?}", err);
-		exit(exitcode::OSERR);
-	});
-
+fn load_siteinfo(config: Config, themeconfig: ThemeConfig) -> Site {
 	let files = glob("./*.md").unwrap_or_else(|err| {
 		eprintln!("Unable to create file glob! Additional info below:\n{:#?}", err);
 		exit(exitcode::SOFTWARE);
-	}).par_bridge();
-
-	let plugins_list = config.plugins.plugins_list.to_owned();
-	let child = thread::spawn(move || {
-		init_plugins("asyncinit", &plugins_list);
 	});
 
-	files.filter_map(Result::ok).for_each(|fpath| {
-		let input_name = fpath.to_string_lossy();
-
-		println!("Parsing {}...", input_name);
-		let mut input = fs::read(&fpath).unwrap_or_else(|_| {
-			eprintln!("Unable to open {:#?}!", &fpath);
-			exit(exitcode::NOINPUT);
-		});
-
-		let output_name = fpath.with_extension("html");
-		let mut output = File::create(&output_name).unwrap_or_else(|_| {
-			eprintln!("Unable to create {:#?}!", &output_name);
-			exit(exitcode::CANTCREAT);
-		});
-
-		parse_to_file(&mut input, &mut output, &input_name, &config).unwrap_or_else(|_| {
-			eprintln!("Unable to finish parsing {:#?}!", &fpath);
-			exit(exitcode::IOERR);
-		});
+	let mut pages = Vec::new();
+	files.filter_map(Result::ok).for_each(|file| {
+		pages.push(
+			load_pageinfo(&file)
+		);
 	});
 
-	init_plugins("postinit", &config.plugins.plugins_list);
-	let _ = child.join();
+	Site {
+		custom_css: themeconfig.css,
+		hometxt: config.katsite_essentials.theme_hometxt,
+		pages,
+	}
+}
+
+fn render_liquid(data: &str, site: &Site, page: &Page) {
+	let template = ParserBuilder::with_stdlib()
+		.build().unwrap()
+		.parse(data).unwrap();
+
+	let globals = liquid::object!({
+		"page": page,
+		"site": site,
+	});
+
+	template.render_to(&mut io::stdout().lock(), &globals).unwrap();
+}
+
+fn render_markdown_page(config: Config, themeconfig: ThemeConfig, file: &str, data: &str) {
+	let add_start = match themeconfig.layout_type {
+		0 => {
+			[CSS_LOADER, &themeconfig.append_top_html].concat()
+		}
+		1 => {
+			[CSS_LOADER, &themeconfig.append_top_html, BASIC_NAVBAR].concat()
+		}
+		2 => {
+			[CSS_LOADER, &themeconfig.append_top_html, COMPLEX_NAVBAR].concat()
+		}
+		x if themeconfig.append_top_html.is_empty() || x == 3 => {
+			[CSS_LOADER, &themeconfig.append_top_html, COMPLEX_NAVBAR, "<article>\n\n"].concat()
+		}
+		_ => {
+			[CSS_LOADER, "\n<header>\n", &themeconfig.append_top_html, COMPLEX_NAVBAR, "</header>\n<article>\n\n"].concat()
+		}
+	};
+
+	let add_end = match themeconfig.layout_type {
+		0 | 1 | 2 => {
+			(&themeconfig.append_bottom_html).to_string()
+		},
+		x if themeconfig.append_bottom_html.is_empty() || x == 3 => {
+			["\n</article>\n", &themeconfig.append_bottom_html].concat()
+		}
+		_ => {
+			["\n</article>\n<footer>\n", &themeconfig.append_bottom_html, "\n</footer>"].concat()
+		},
+	};
+
+	let page = load_pageinfo(file);
+	let site = load_siteinfo(config, themeconfig);
+
+	render_liquid(&[&add_start, "\n\n", data, "\n\n", &add_end].concat(), &site, &page);
+}
+
+fn main() {
+	let command = env::args().nth(1);
+	let file = env::args().nth(2);
+
+	match command {
+		Some(x) if x == "markdown" => {
+			let mut input = String::new();
+			io::stdin().lock().read_to_string(&mut input).unwrap();
+
+			let config = load_config();
+			let themeconfig = load_theme_config(&config.katsite_essentials.theme);
+
+			render_markdown_page(config, themeconfig, &file.unwrap(), &input);
+		},
+		Some(x) if x == "asyncinit" => {
+			exit(0);
+		},
+		Some(x) if x == "postinit" => {
+			let config = load_config();
+			if !config.katsite_essentials.minifier {
+				exit(0);
+			}
+
+			let files = glob("./*.html").unwrap_or_else(|err| {
+				eprintln!("Unable to create file glob! Additional info below:\n{:#?}", err);
+				exit(exitcode::SOFTWARE);
+			});
+
+			files.filter_map(Result::ok).for_each(|fpath| {
+				println!("Minifying {}...", fpath.to_string_lossy());
+				let mut input = fs::read(&fpath).unwrap_or_else(|_| {
+					eprintln!("Unable to open {:#?}!", &fpath);
+					exit(exitcode::NOINPUT);
+				});
+
+				hyperbuild_truncate(&mut input).unwrap_or_else(|err| {
+					eprintln!("Unable to minify {:#?}! Additional info below:\n{:#?}", &fpath, err);
+					exit(exitcode::CONFIG);
+				});
+
+				fs::write(&fpath, input).unwrap_or_else(|_| {
+					eprintln!("Unable to write to {:#?}!", &fpath);
+					exit(exitcode::IOERR);
+				})
+			})
+		},
+		_ => {
+			eprintln!("KatSite Essentials is a plugin for KatSite, and is not meant to be used directly.");
+			exit(exitcode::USAGE);
+		},
+	}
 }
