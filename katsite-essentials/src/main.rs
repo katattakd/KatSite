@@ -5,9 +5,11 @@
 
 extern crate exitcode;
 extern crate glob;
+extern crate htmlescape;
 extern crate serde_derive;
 extern crate toml;
 use glob::glob;
+use htmlescape::{encode_minimal, encode_attribute};
 use serde_derive::Deserialize;
 use std::{env, fs, io, io::{Read, Write}, process::exit};
 
@@ -33,57 +35,13 @@ struct Plugin {
 
 fn load_config() -> Config {
 	let config_input = fs::read_to_string("conf.toml").unwrap_or_else(|_| {
-		println!("Unable to read config file!");
+		eprintln!("Unable to read config file!");
 		exit(exitcode::NOINPUT)
 	});
 	toml::from_str(&config_input).unwrap_or_else(|err| {
-		println!("Unable to parse config file! Additional info below:\n{:#?}", err);
+		eprintln!("Unable to parse config file! Additional info below:\n{:#?}", err);
 		exit(exitcode::CONFIG);
 	})
-}
-
-fn render_navbar(navtype: usize, input_filename: String, hometext: String) {
-	if navtype == 0 {
-		return
-	}
-
-	if navtype >= 2 {
-		println!("<nav>");
-	}
-
-	if navtype == 1 {
-		println!("\n[{}](index.html)", hometext);
-	} else if input_filename == "index.md" {
-		println!("<a class=active href=index.html>\n\n{}\n\n</a>", hometext);
-	} else {
-		println!("<a href=index.html>\n\n{}\n\n</a>", hometext);
-	}
-
-	for file in glob("./*.md").unwrap() {
-		let file = file.unwrap();
-		let filepath = file.with_extension("html");
-		if filepath.to_string_lossy() == "index.html" {
-			continue
-		}
-
-		let filename = file.file_stem().unwrap_or_else(|| file.extension().unwrap()).to_string_lossy();
-		
-		if [&filename, ".md"].concat() == input_filename && navtype >= 2 {
-			println!("<a class=active href=\"{}\"><p>{}</p></a>", filepath.to_string_lossy(), filename);
-			continue
-		}
-
-		if navtype >= 2 {
-			println!("<a href=\"{}\"><p>{}</p></a>", filepath.to_string_lossy(), filename);
-		} else {
-			println!("[{}]({})", filename, filepath.to_string_lossy());
-		}
-	}
-
-	println!("{}", match navtype {
-		1 => "\n---\n",
-		_ => "</nav>\n",
-	});
 }
 
 fn load_theme_config(theme: String) -> ThemeConfig {
@@ -95,18 +53,78 @@ fn load_theme_config(theme: String) -> ThemeConfig {
 			append_bottom_html: "".to_string(),
 		}
 	} else {
-		let config_input = fs::read_to_string(["themes/theme-", &theme, ".toml"].concat()).unwrap_or_else(|_| ["css=[\"theme-", &theme, ".css\"]\nlayout_type=1\nappend_top_html=\"\"\nappend_bottom_html=\"\""].concat());
-		toml::from_str(&config_input).expect("Unable to parse theme config!")
+		let config_input = fs::read_to_string(["themes/theme-", &theme, ".toml"].concat())
+			.unwrap_or_else(|_| [
+				"css=[\"theme-",
+				&theme,
+				".css\"]\nlayout_type=1\nappend_top_html=\"\"\nappend_bottom_html=\"\""
+			].concat());
+		toml::from_str(&config_input).unwrap_or_else(|err| {
+			eprintln!("Unable to parse theme config file! Additional info below:\n{:#?}", err);
+			exit(exitcode::CONFIG);
+		})
 	}
+}
+
+fn render_navbar(navtype: usize, input_filename: String, hometext: String) {
+	match navtype {
+		0 => return,
+		1 => println!("\n[{}](index.html)", hometext),
+		_ => {
+			println!("<nav>");
+			if input_filename == "index.md" { // Hometext is purposely unescaped.
+				println!("<a class=active ");
+			} else {
+				println!("<a ");
+			}
+			println!("href=index.html>\n\n{}\n\n</a>", hometext);
+		}
+	}
+
+	let files = glob("./*.md").unwrap_or_else(|err| {
+		eprintln!("Unable to create file glob! Additional info below:\n{:#?}", err);
+		exit(exitcode::SOFTWARE);
+	});
+
+	files.filter_map(Result::ok).for_each(|file| {
+		let hfile = file.with_extension("html");
+		let name = htmlescape::encode_minimal(
+			&hfile.file_stem().unwrap_or_else(||
+				file.extension().unwrap()
+			).to_string_lossy()
+		);
+		let path = htmlescape::encode_attribute(&hfile.to_string_lossy());
+
+		if name == "index" {
+			return
+		}
+
+		match navtype {
+			1 => println!("[{}]({})", name, path),
+			_ => {
+				if file.to_string_lossy() == input_filename {
+					println!("<a class=active ");
+				} else {
+					println!("<a ");
+				}
+				println!("href=\"{}\"><p>{}</p></a>", path, name);
+			}
+		}
+	});
+
+	println!("{}", match navtype {
+		1 => "\n---\n",
+		_ => "</nav>\n",
+	});
 }
 
 fn main() {
 	let command = env::args().nth(1);
+	let file = env::args().nth(2);
 
 	match command {
 		Some(x) if x == "markdown" => {
 			let config = load_config();
-			let file = env::args().nth(2).unwrap();
 
 			let mut stdin = Vec::new();
 			io::stdin().lock().read_to_end(&mut stdin).unwrap();
@@ -117,14 +135,14 @@ fn main() {
 				println!("<link rel=stylesheet href=\"themes/{}\">\n", file);
 			}
 			if tconfig.layout_type >= 4 && !tconfig.append_top_html.is_empty() {
-				println!("<header>\n");
+				println!("<header>");
 			}
 
 			println!("{}\n", tconfig.append_top_html);
-			render_navbar(tconfig.layout_type, file, config.katsite_essentials.theme_hometxt);
+			render_navbar(tconfig.layout_type, file.unwrap(), config.katsite_essentials.theme_hometxt);
 
 			if tconfig.layout_type >= 4 && !tconfig.append_top_html.is_empty() {
-				println!("\n</header>");
+				println!("</header>");
 			}
 
 			if tconfig.layout_type >= 3 {
@@ -141,10 +159,10 @@ fn main() {
 				println!("<footer>");
 			}
 
-			println!("\n{}\n", tconfig.append_bottom_html);
+			println!("{}", tconfig.append_bottom_html);
 
 			if tconfig.layout_type >= 4 && !tconfig.append_bottom_html.is_empty() {
-				println!("</footer>\n");
+				println!("</footer>");
 			}
 		},
 		Some(x) if x == "asyncinit" => {
@@ -154,7 +172,7 @@ fn main() {
 			exit(0);
 		},
 		_ => {
-			println!("KatSite Essentials is a plugin for KatSite, and is not meant to be used directly.");
+			eprintln!("KatSite Essentials is a plugin for KatSite, and is not meant to be used directly.");
 			exit(exitcode::USAGE);
 		},
 	}
