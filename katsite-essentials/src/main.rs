@@ -45,22 +45,13 @@ struct Page {
 #[derive(Serialize)]
 struct Site {
 	custom_css: Vec<String>,
+	hometxt: String,
 	pages: Vec<Page>,
 }
 
 static CSS_LOADER: &str = "{% for file in site.custom_css %}<link rel=stylesheet href=\"themes/{{ file }}\">{% endfor %}\n\n";
-static BASIC_NAVBAR: &str = "\n
-[Home](index.html){% for page in site.pages %}{% if page.basename == \"index\" %}{% continue %}{% endif %}
-[{{ page.basename }}]({{ page.name }}){% endfor %}
-
----";
-static COMPLEX_NAVBAR: &str = "\n
-<nav>
-{% if page.basename == \"index\" %}<a class=active id=home href=index.html><p>Home</p></a>{% else %}<a id=home href=index.html><p>Home</p></a>{% endif %}
-{% for page_ in site.pages %}{% if page_.basename == \"index\" %}{% continue %}{% endif %}{% if page_.name == page.name %}<a class=active href=\"{{ page_.name }}\"><p>{{ page_.basename }}</p></a>{% else %}<a href=\"{{ page_.name }}\"><p>{{ page_.basename }}</p></a>
-{% endif %}{% endfor %}
-</nav>\n\n";
-
+static BASIC_NAVBAR: &str = "\n\n[{{ site.hometxt }}](index.html){% for page in site.pages %}{% if page.basename == \"index\" %}{% continue %}{% endif %}\n[{{ page.basename }}]({{ page.name }}){% endfor %}\n\n---\n\n";
+static COMPLEX_NAVBAR: &str = "\n\n<nav>\n{% if page.basename == \"index\" %}<a class=active id=home href=index.html><p>{{ site.hometxt }}</p></a>{% else %}<a id=home href=index.html><p>{{ site.hometxt }}</p></a>{% endif %}\n{% for page_ in site.pages %}{% if page_.basename == \"index\" %}{% continue %}{% endif %}{% if page_.name == page.name %}<a class=active href=\"{{ page_.name }}\"><p>{{ page_.basename }}</p></a>{% else %}<a href=\"{{ page_.name }}\"><p>{{ page_.basename }}</p></a>\n{% endif %}{% endfor %}\n</nav>\n\n";
 
 fn load_config() -> Config {
 	let config_input = fs::read_to_string("conf.toml").unwrap_or_else(|_| {
@@ -106,20 +97,20 @@ fn load_pageinfo<P: AsRef<Path>>(path: P) -> Page {
 				.as_secs()
 		},
 		name: {
-			htmlescape::encode_attribute(
+			encode_attribute(
 				&file.with_extension("html")
 					.file_name().unwrap().to_string_lossy()
 			)
 		},
 		basename: {
-			htmlescape::encode_minimal(
+			encode_minimal(
 				&file.file_stem().unwrap().to_string_lossy()
 			)
 		},
 	}
 }
 
-fn load_siteinfo(themeconfig: ThemeConfig) -> Site {
+fn load_siteinfo(config: Config, themeconfig: ThemeConfig) -> Site {
 	let files = glob("./*.md").unwrap_or_else(|err| {
 		eprintln!("Unable to create file glob! Additional info below:\n{:#?}", err);
 		exit(exitcode::SOFTWARE);
@@ -134,6 +125,7 @@ fn load_siteinfo(themeconfig: ThemeConfig) -> Site {
 
 	Site {
 		custom_css: themeconfig.css,
+		hometxt: config.katsite_essentials.theme_hometxt,
 		pages,
 	}
 }
@@ -151,7 +143,7 @@ fn render_liquid(data: &str, site: &Site, page: &Page) {
 	template.render_to(&mut io::stdout().lock(), &globals).unwrap();
 }
 
-fn render_markdown_page(config: &Config, themeconfig: ThemeConfig, file: &str, data: &str) {
+fn render_markdown_page(config: Config, themeconfig: ThemeConfig, file: &str, data: &str) {
 	let add_start = match themeconfig.layout_type {
 		0 => {
 			[CSS_LOADER, &themeconfig.append_top_html].concat()
@@ -162,7 +154,7 @@ fn render_markdown_page(config: &Config, themeconfig: ThemeConfig, file: &str, d
 		2 => {
 			[CSS_LOADER, &themeconfig.append_top_html, COMPLEX_NAVBAR].concat()
 		}
-		(x) if themeconfig.append_top_html.is_empty() || x == 3 => {
+		x if themeconfig.append_top_html.is_empty() || x == 3 => {
 			[CSS_LOADER, &themeconfig.append_top_html, COMPLEX_NAVBAR, "<article>\n\n"].concat()
 		}
 		_ => {
@@ -174,7 +166,7 @@ fn render_markdown_page(config: &Config, themeconfig: ThemeConfig, file: &str, d
 		0 | 1 | 2 => {
 			(&themeconfig.append_bottom_html).to_string()
 		},
-		(x) if themeconfig.append_bottom_html.is_empty() || x == 3 => {
+		x if themeconfig.append_bottom_html.is_empty() || x == 3 => {
 			["\n</article>\n", &themeconfig.append_bottom_html].concat()
 		}
 		_ => {
@@ -183,7 +175,7 @@ fn render_markdown_page(config: &Config, themeconfig: ThemeConfig, file: &str, d
 	};
 
 	let page = load_pageinfo(file);
-	let site = load_siteinfo(themeconfig);
+	let site = load_siteinfo(config, themeconfig);
 
 	render_liquid(&[&add_start, "\n\n", data, "\n\n", &add_end].concat(), &site, &page);
 }
@@ -200,7 +192,7 @@ fn main() {
 			let config = load_config();
 			let themeconfig = load_theme_config(&config.katsite_essentials.theme);
 
-			render_markdown_page(&config, themeconfig, &file.unwrap(), &input);
+			render_markdown_page(config, themeconfig, &file.unwrap(), &input);
 		},
 		Some(x) if x == "asyncinit" => {
 			exit(0);
