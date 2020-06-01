@@ -25,7 +25,7 @@ use hyperbuild::hyperbuild_truncate;
 use liquid::ParserBuilder;
 use rayon::prelude::*;
 use serde_derive::{Serialize, Deserialize};
-use std::{env, fs, fs::{File, OpenOptions}, io, ffi::OsStr, time::{Duration, UNIX_EPOCH}, io::{Read, Write}, process::exit, path::{Path, PathBuf}};
+use std::{env, fs, fs::File, io, ffi::OsStr, time::{Duration, UNIX_EPOCH}, io::{Read, Write}, process::exit, path::{Path, PathBuf}};
 use urlencoding::encode;
 
 #[derive(Deserialize)]
@@ -43,8 +43,8 @@ struct Files {
 #[derive(Deserialize)]
 struct Plugin {
 	name: String,
+	url_stub: String,
 
-	og_stub: String,
 	default_lang: String,
 	default_og_type: String,
 	default_is_nsfw: bool,
@@ -52,6 +52,7 @@ struct Plugin {
 
 	theme: String,
 	layout: String,
+	liquid_glob: String,
 
 	sanitizer: bool,
 	minifier: bool,
@@ -77,6 +78,7 @@ struct Page {
 	modified_time: u64,
 	name: String,
 	filename: String,
+	filename_url: String,
 	filename_raw: String,
 	data: String,
 	title: String,
@@ -94,7 +96,7 @@ struct Page {
 struct Site {
 	name: String,
 	theme: String,
-	og_stub: String,
+	url_stub: String,
 	pages: Vec<Page>,
 }
 
@@ -164,6 +166,7 @@ fn load_pageinfo<P: AsRef<Path>>(config: &Config, path: P) -> Page {
 		},
 		name: encode_attribute(&file_stem),
 		filename: encode_attribute(&encode(&file_name)),
+		filename_url: encode(&file_name),
 		filename_raw: file_name.to_string(),
 		data: contents,
 		title: {
@@ -231,10 +234,56 @@ fn load_siteinfo(config: &Config) -> Site {
 	Site {
 		name: config.katsite_essentials.name.to_owned(),
 		theme: config.katsite_essentials.theme.to_owned(),
-		og_stub: config.katsite_essentials.og_stub.to_owned(),
+		url_stub: config.katsite_essentials.url_stub.to_owned(),
 		pages,
 	}
 }
+
+fn load_additional_templates(site: &Site, config: &Config) {
+	let files = glob(&config.katsite_essentials.liquid_glob).unwrap_or_else(|err| {
+		eprintln!("Unable to create file glob! Additional info below:\n{:#?}", err);
+		exit(exitcode::CONFIG);
+	}).par_bridge();
+
+	files.filter_map(Result::ok).for_each(|file| {
+		if file.file_name() == Some(OsStr::new(&config.katsite_essentials.layout)) {
+			return
+		}
+
+		eprintln!("Formatting {}...", file.file_stem().unwrap().to_string_lossy());
+
+		let layout = fs::read_to_string(&file).unwrap_or_else(|_| {
+			eprintln!("Unable to open {:#?}!", file);
+			exit(exitcode::IOERR)
+		});
+
+		let template = ParserBuilder::with_stdlib()
+			.build().unwrap_or_else(|err| {
+				eprintln!("Unable to create liquid parser! Additional info below:\n{:#?}", err);
+				exit(exitcode::SOFTWARE);
+			})
+			.parse(&layout).unwrap_or_else(|err| {
+				eprintln!("Unable to parse {:#?}! Additional info below:\n{:#?}", file, err);
+				exit(exitcode::DATAERR);
+			});
+
+
+		let globals = liquid::object!({
+			"site": site,
+		});
+
+		let output = template.render(&globals).unwrap_or_else(|err| {
+			eprintln!("Unable to render {:#?}! Additional info below:\n{:#?}", file, err);
+			exit(exitcode::DATAERR);
+		});
+
+		fs::write(config.files.output_dir.join(&file.file_stem().unwrap()), output).unwrap_or_else(|_| {
+			eprintln!("Unable to create {:#?}", file.file_stem());
+			exit(exitcode::IOERR);
+		});
+	})
+}
+
 fn main() {
 	let command = env::args().nth(1);
 
@@ -257,12 +306,6 @@ fn main() {
 				exit(exitcode::NOINPUT)
 			});
 
-			let robots_path = config.files.output_dir.join("robots.txt");
-			fs::write(&robots_path, b"User-agent: *\n").unwrap_or_else(|_| {
-				eprintln!("Unable to create robots.txt file!");
-				exit(exitcode::IOERR);
-			});
-
 			let template = ParserBuilder::with_stdlib()
 				.build().unwrap_or_else(|err| {
 					eprintln!("Unable to create liquid parser! Additional info below:\n{:#?}", err);
@@ -274,22 +317,11 @@ fn main() {
 				});
 
 			let site = load_siteinfo(&config);
+
+			load_additional_templates(&site, &config);
+
 			site.pages.par_iter().for_each(|page| {
 				println!("Formatting {}...", page.filename_raw);
-
-				if !page.allow_robots {
-					let mut robots = OpenOptions::new().append(true).open(&robots_path).unwrap_or_else(|_| {
-						eprintln!("Unable to open robots.txt file!");
-						exit(exitcode::IOERR);
-					});
-
-					robots.write_all(
-						["Disallow: /", &encode(&page.filename_raw), "\n"].concat().as_bytes()
-					).unwrap_or_else(|_| {
-						eprintln!("Unable to write to robots.txt file!");
-						exit(exitcode::IOERR);
-					});
-				}
 
 				let globals = liquid::object!({
 					"page": page,
