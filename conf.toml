@@ -16,15 +16,16 @@ comrak_extensions = true # Enable Comrak markdown extensions (curly quotes, supe
 
 [katsite_essentials] # Settings for the katsite-essentials plugin
 name = "My Website" # The name of your website.
+url_stub = "https://example.com" # The stub url used for fields requiring an absolute URL.
 
-og_stub = "https://example.com" # The stub url used for generating the og:url page attribute.
 default_lang = "en"         # The default language for pages.
 default_og_type = "website" # The default Open Graph type for pages.
 default_is_nsfw = false     # The default NSFW status for pages.
 default_allow_robots = true # The default "robots" policy for pages.
 
-theme = "demo" # Load the "basic" theme. Set this to "none" to disable theming.
-layout = "layout.liquid" # Use the "layout.liquid" file for generating pages.
+theme = "demo"             # Load the "basic" theme. Set this to "none" to disable theming.
+layout = "layout.liquid"   # Use the "layout.liquid" file for generating pages.
+liquid_glob = "./*.liquid" # Pattern used to find additional liquid templates.
 
 sanitizer = true # Sanitize input HTML.
 minifier = true # Minify output HTML.
