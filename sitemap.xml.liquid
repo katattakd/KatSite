@@ -1,0 +1,1 @@
+<?xml version="1.0" encoding="UTF-8"?><urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">{% for page in site.pages %}{% if page.allow_robots == true %}<url><loc>{{ site.url_stub }}/{{ page.filename_url }}</loc></url>{% endif %}{% endfor %}</urlset>

@@ -1,0 +1,2 @@
+{% for page in site.pages %}{% if page.allow_robots == true %}{{ site.url_stub }}/{{ page.filename_url }}
+{% endif %}{% endfor %}

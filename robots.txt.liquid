@@ -1,3 +1,4 @@
 User-agent: *
 {% for page in site.pages %}{% if page.allow_robots != true %}Disallow: /{{ page.filename_url }}
 {% endif %}{% endfor %}
+Sitemap: {{ site.url_stub}}/sitemap.xml
