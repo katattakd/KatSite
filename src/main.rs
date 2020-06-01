@@ -1,6 +1,7 @@
 #![warn(clippy::nursery)]
 #![warn(clippy::pedantic)]
-#![allow(clippy::cargo)]
+#![warn(clippy::cargo)]
+#![allow(clippy::cargo_common_metadata)]
 #![warn(clippy::all)]
 
 extern crate comrak;
