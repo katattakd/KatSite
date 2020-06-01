@@ -19,7 +19,7 @@ extern crate toml;
 use ammonia::clean;
 use brotli::enc::writer::CompressorWriter;
 use glob::glob;
-use htmlescape::{encode_minimal, encode_attribute};
+use htmlescape::encode_attribute;
 use hyperbuild::hyperbuild_truncate;
 use liquid::ParserBuilder;
 use rayon::prelude::*;
@@ -58,13 +58,15 @@ struct Plugin {
 
 #[derive(Deserialize)]
 struct FrontMatter {
-	title: Option<String>, // Warn if over 65 char
-	description: Option<String>, // Warn if over 155 char
-	locale: Option<String>, // Default to default_lang
-	is_nsfw: Option<bool>, // Default to false
-	allow_robots: Option<bool>, // Default to true
-	og_type: Option<String>, // Default to default_og_type
+	title: Option<String>,
+	description: Option<String>,
+	locale: Option<String>,
+	is_nsfw: Option<bool>,
+	allow_robots: Option<bool>,
+	og_type: Option<String>,
 	og_image: Option<String>,
+	og_audio: Option<String>,
+	og_video: Option<String>,
 }
 
 #[derive(Serialize)]
@@ -82,6 +84,8 @@ struct Page {
 	allow_robots: bool,
 	og_type: String,
 	og_image: Option<String>,
+	og_audio: Option<String>,
+	og_video: Option<String>,
 }
 
 #[derive(Serialize)]
@@ -156,12 +160,15 @@ fn load_pageinfo<P: AsRef<Path>>(config: &Config, path: P) -> Page {
 				0
 			}
 		},
-		name: encode_minimal(&file_stem),
+		name: encode_attribute(&file_stem),
 		filename: encode_attribute(&file_name),
 		filename_raw: file_name.to_string(),
 		data: contents,
 		title: {
 			let title = if let Some(title) = frontmatter.title {
+				if title.chars().count() > 65 {
+					eprintln!("Warning: {}'s title is excessively long.", path.to_string_lossy())
+				}
 				title
 			} else {
 				if path.file_name() == Some(OsStr::new("index.md")) {
@@ -174,6 +181,9 @@ fn load_pageinfo<P: AsRef<Path>>(config: &Config, path: P) -> Page {
 		},
 		description: {
 			if let Some(description) = frontmatter.description {
+				if description.chars().count() > 155 {
+					eprintln!("Warning: {}'s description is excessively long.", path.to_string_lossy())
+				}
 				Some(encode_attribute(&description))
 			} else {
 				None
@@ -189,7 +199,21 @@ fn load_pageinfo<P: AsRef<Path>>(config: &Config, path: P) -> Page {
 			} else {
 				None
 			}
-		}
+		},
+		og_audio: {
+			if let Some(audio) = frontmatter.og_audio {
+				Some(encode_attribute(&audio))
+			} else {
+				None
+			}
+		},
+		og_video: {
+			if let Some(video) = frontmatter.og_video {
+				Some(encode_attribute(&video))
+			} else {
+				None
+			}
+		},
 	}
 }
 
