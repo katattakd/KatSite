@@ -14,6 +14,12 @@
 			<meta property=og:type content="{{ page.og_type }}">
 			<meta property=og:url content="{{ site.og_stub }}/{{ page.filename }}">
 			<meta property=og:image content="{{ page.og_image }}">
+			{% if page.og_audio %}
+				<meta property=og:audio content="{{ page.og_audio }}">
+			{% endif %}
+			{% if page.og_video %}
+				<meta property=og:video content="{{ page.og_video }}">
+			{% endif %}
 			<meta property=og:site_name content="{{ site.name }}">
 			{% if page.description %}
 				<meta property=og:description content="{{ page.description }}">
