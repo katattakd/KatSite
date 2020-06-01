@@ -1,0 +1,58 @@
+<!doctype html>
+<html lang="{{ page.locale }}">
+	<head>
+		<link rel=stylesheet href="../themes/theme-{{ site.theme }}.css">
+		<meta name=viewport content="width=device-width,initial-scale=1">
+		<title>{{ page.title }}</title>
+
+		{% if page.description %}
+			<meta name=description content="{{ page.description}}">
+		{% endif %}
+
+		{% if page.og_image %}
+			<meta property=og:title content="{{ page.title }}">
+			<meta property=og:type content="{{ page.og_type }}">
+			<meta property=og:url content="{{ site.og_stub }}/{{ page.filename }}">
+			<meta property=og:image content="{{ page.og_image }}">
+			<meta property=og:site_name content="{{ site.name }}">
+			{% if page.description %}
+				<meta property=og:description content="{{ page.description }}">
+			{% endif %}
+			<meta property=og:locale content="{{ page.locale }}">
+		{% endif %}
+
+		{% if page.allow_robots != true %}
+			<meta name=robots content=noindex,nofollow>
+		{% endif %}
+
+		{% if page.is_nsfw %}
+			<meta name=rating content=adult>
+		{% endif %}
+	</head>
+	<body>
+		<header>
+			<nav>
+				{% if page.filename_raw == "index.html" %}
+					<a class=active href=index.html><h3>{{ site.name }}</h3></a>
+				{% else %}
+					<a href=index.html><h3>{{ site.name }}</h3></a>
+				{% endif %}
+				{% for page_ in site.pages %}
+					{% if page_.filename_raw == "index.html" %}
+						{% continue %}
+					{% endif %}
+					{% if page_.filename_raw == page.filename_raw %}
+						<a class=active href="{{ page_.filename }}"><p>{{ page_.name }}</p></a>
+					{% else %}
+						<a href="{{ page_.filename }}"><p>{{ page_.name }}</p></a>
+					{% endif %}
+				{% endfor %}
+			</nav>
+		</header>
+		<article>
+			{{ page.data }}
+		</article>
+		<footer>
+		</footer>
+	</body>
+</html>
