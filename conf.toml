@@ -1,33 +1,26 @@
 # Additional notes for users needing extra performance:
-# - Use as few plugins as possible.
-# - For advanced users:
-#   - If filter_*, convert_*, create_*, and enable_*_extensions is false, and enable_raw_* is true, KatSite will use a significantly faster parser (pulldown-cmark instead of comrak).
-#   - If no plugins are being loaded, KatSite will run significantly faster. Embedded use cases should manipulate the HTML after KatSite is finished running, instead of using the plugin system.
-#   - Try playing around with the thread_pool_size, to find the best value for your system.
-
-# Additional notes for advanced users:
-# - Changing the markdown settings from defaults will likely break third-party plugins, even though most changes should work fine with the built-in plugins. Do not change them unless necessary.
+# - Use as few plugins as possible. Embedded use cases should manipulate the output HTML, instead of using the plugin system.
+# - If all markdown settings are false, KatSite will use a significantly faster parser (pulldown-cmark instead of comrak).
+# - Try playing around with the thread_pool_size, to find the best value for your system.
 
 thread_pool_size = 0 # Limit the size of the thread pool. Setting this to zero will automatically determine the optimal number of threads.
 
 [markdown] # Markdown parser settings.
-filter_html_tags = false # Remove the title, textarea, style, xmp, iframe, noembed, noframes, script, and plaintext HTML tags.
 convert_line_breaks = false # Convert soft line breaks (newlines) into hard line breaks.
 convert_punctuation = true  # Convert simple punctuation into smart punctuation (curly quotes).
-enable_raw_html_inlining = true # Allow inline HTML to be used in markdown files.
+create_header_anchors = false # Allow creating liks to document headers.
 enable_github_extensions = true # Enable GitHub markdown extensions (strikethrough, tables, automatic links, task lists.
 enable_comrak_extensions = true # Enable Comrak markdown extensions (superscript, footnotes, description lists).
 
 [html] # HTML generator settings.
 append_5doctype = true # Append an HTML5 doctype to the final document.
 append_viewport = true # Append a responsive viewport tag to the final document.
-create_header_anchors = false # Allow creating liks to document headers.
 
 [plugins] # KatSite plugin settings.
 plugins_list = ["katsite-essentials"] # Load plugins in this order.
 
 [katsite_essentials] # Settings for the katsite-essentials plugin
 theme = "demo" # Load the "basic" theme. Set this to "none" to disable theming.
-theme_hometxt = "Home" # The text for your theme's "Home" button. This may be unused in some themes.
+theme_hometxt = "home" # The text for your theme's "Home" button. This may be unused in some themes.
 minifier = true # Minify output HTML.
 
