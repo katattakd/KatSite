@@ -4,13 +4,14 @@
 # - Try playing around with the thread_pool_size, to find the best value for your system.
 # - For users of katsite-essentials:
 #   - Enable only the features you need. Additional features can slow down site generation.
+#   - Use the config checker to improve your configuration.
 
 thread_pool_size = 0 # Limit the size of the thread pool. Setting this to zero will automatically determine the optimal number of threads.
 
 [markdown] # Markdown parser settings.
 convert_line_breaks = false # Convert soft line breaks (newlines) into hard line breaks.
 convert_punctuation = true  # Convert simple punctuation into smart punctuation (curly quotes).
-create_header_anchors = false # Allow creating liks to document headers.
+create_header_anchors = false   # Allow creating links to document headers.
 enable_github_extensions = true # Enable GitHub markdown extensions (strikethrough, tables, automatic links, task lists.
 enable_comrak_extensions = true # Enable Comrak markdown extensions (superscript, footnotes, description lists).
 
@@ -24,5 +25,8 @@ plugins_list = ["katsite-essentials"] # Load plugins in this order.
 [katsite_essentials] # Settings for the katsite-essentials plugin
 theme = "demo" # Load the "basic" theme. Set this to "none" to disable theming.
 homepage_title = "My Website" # The title for your site's home page. Implementation of this is theme-specific, some themes may not use it.
+config_checker = true # Check your KatSite config, and give recommendations on how you can improve it.
+liquid = true # Enable Liquid templating. Disabling this will disable theming and page titles.
+sanitizer = false # Sanitize output HTML. Enabling this will disable liquid templating.
 minifier = true # Minify output HTML.
 brotli = false # Compress output HTML with Brotli.
