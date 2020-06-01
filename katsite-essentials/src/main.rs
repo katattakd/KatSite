@@ -1,8 +1,10 @@
 #![warn(clippy::nursery)]
 #![warn(clippy::pedantic)]
-#![allow(clippy::cargo)]
+#![warn(clippy::cargo)]
+#![allow(clippy::cargo_common_metadata)]
 #![warn(clippy::all)]
 
+extern crate ammonia;
 extern crate brotli;
 extern crate exitcode;
 extern crate glob;
@@ -12,6 +14,7 @@ extern crate liquid;
 extern crate rayon;
 extern crate serde_derive;
 extern crate toml;
+use ammonia::clean;
 use brotli::enc::writer::CompressorWriter;
 use glob::glob;
 use htmlescape::{encode_minimal, encode_attribute};
@@ -24,7 +27,41 @@ use std::{env, fs, fs::File, io, ffi::OsStr, time::{Duration, UNIX_EPOCH}, io::{
 #[derive(Deserialize)]
 struct Config {
 	thread_pool_size: usize,
+	markdown: Markdown,
+	html: Html,
+	plugins: Plugins,
 	katsite_essentials: Plugin,
+}
+
+#[derive(Deserialize)]
+struct Markdown {
+	convert_line_breaks: bool,
+	convert_punctuation: bool,
+	create_header_anchors: bool,
+	enable_github_extensions: bool,
+	enable_comrak_extensions: bool,
+}
+
+#[derive(Deserialize)]
+struct Html {
+	append_5doctype: bool,
+	append_viewport: bool,
+}
+
+#[derive(Deserialize)]
+struct Plugins {
+	plugins_list: Vec<String>,
+}
+
+#[derive(Deserialize)]
+struct Plugin {
+	theme: String,
+	homepage_title: String,
+	config_checker: bool,
+	liquid: bool,
+	sanitizer: bool,
+	minifier: bool,
+	brotli: bool,
 }
 
 #[derive(Deserialize)]
@@ -33,14 +70,6 @@ struct ThemeConfig {
 	layout_type: usize,
 	append_top_html: String,
 	append_bottom_html: String,
-}
-
-#[derive(Deserialize)]
-struct Plugin {
-	theme: String,
-	homepage_title: String,
-	minifier: bool,
-	brotli: bool,
 }
 
 #[derive(Serialize)]
@@ -211,16 +240,71 @@ fn main() {
 			io::stdin().lock().read_to_string(&mut input).unwrap();
 
 			let config = load_config();
-			let themeconfig = load_theme_config(&config.katsite_essentials.theme);
 
-			render_markdown_page(&config, themeconfig, &file.unwrap(), &input);
+			if config.katsite_essentials.liquid && !config.katsite_essentials.sanitizer {
+				let themeconfig = load_theme_config(&config.katsite_essentials.theme);
+				render_markdown_page(&config, themeconfig, &file.unwrap(), &input);
+			} else {
+				println!("{}", input);
+			}
 		},
 		Some(x) if x == "asyncinit" => {
-			exit(0);
+			let config = load_config();
+
+			if !config.katsite_essentials.config_checker {
+				exit(0);
+			}
+
+			println!("Checking config...");
+
+			if config.markdown.convert_line_breaks {
+				eprintln!("Warn: markdown.convert_line_breaks may mess with the rendering of many documents/themes, and it breaks the commonmark spec.")
+			}
+
+			if !config.html.append_5doctype {
+				eprintln!("Warn: Disabling html.append_5doctype will result in output HTML that isn't spec compliant.")
+			}
+
+			if !config.html.append_viewport {
+				eprintln!("Warn: Disabling html.append_viewport may cause graphical issues for mobile users.")
+			}
+
+			if config.thread_pool_size == 1 {
+				eprintln!("Warn: Using a small thread pool size may significantly slow down KatSite.")
+			}
+
+			if config.plugins.plugins_list.len() > 5 {
+				eprintln!("Warn: Using an excessive number of plugins may slow down KatSite.")
+			}
+
+			if !config.markdown.convert_line_breaks && !config.markdown.enable_github_extensions && !config.markdown.enable_comrak_extensions && !config.katsite_essentials.brotli && (!config.katsite_essentials.minifier || (!config.katsite_essentials.liquid || !config.katsite_essentials.sanitizer)) && config.plugins.plugins_list.len() <= 3 {
+				if config.markdown.convert_punctuation {
+					eprintln!("Warn: Disabling markdown.convert_punctuation will allow KatSite to use a significantly faster Markdown parser.")
+				}
+				if config.markdown.create_header_anchors {
+					eprintln!("Warn: Disabling markdown.create_header_anchors will allow KatSite to use a significantly faster Markdown parser.")
+				}
+			}
+
+			if !config.katsite_essentials.minifier && config.katsite_essentials.brotli {
+				eprintln!("Warn: Enabling katsite_essentials.minifier may significantly reduce the size of the output html.")
+			}
+
+			if config.katsite_essentials.minifier && config.markdown.create_header_anchors {
+				eprintln!("Warn: Disabling markdown.create_header_anchors may significantly reduce the size of the output HTML.")
+			}
+
+			if config.katsite_essentials.theme != "none" && !config.katsite_essentials.liquid && !config.katsite_essentials.sanitizer {
+				eprintln!("Warn: Disabling katsite_essentials.liquid will automatically disable theming.")
+			}
+
+			if config.katsite_essentials.liquid && config.katsite_essentials.sanitizer {
+				eprintln!("Warn: Enabling katsite_essentials.sanitizer will automatically disable liquid templating.")
+			}
 		},
 		Some(x) if x == "postinit" => {
 			let config = load_config();
-			if !config.katsite_essentials.minifier && !config.katsite_essentials.brotli {
+			if !config.katsite_essentials.minifier && !config.katsite_essentials.sanitizer && !config.katsite_essentials.brotli {
 				exit(0);
 			}
 
@@ -239,6 +323,19 @@ fn main() {
 					eprintln!("Unable to open {:#?}!", &fpath);
 					exit(exitcode::NOINPUT);
 				});
+
+				if config.katsite_essentials.sanitizer {
+					println!("Sanitizing {}...", fpath.to_string_lossy());
+					let mut append = String::new();
+					if config.html.append_5doctype {
+						append = "<!doctype html>".to_string()
+					}
+					if config.html.append_viewport {
+						append = [&append, "<meta name=viewport content=\"width=device-width,initial-scale=1\">"].concat()
+					}
+
+					input = [append.to_string(), clean(&String::from_utf8_lossy(&input))].concat().into_bytes();
+				}
 
 				if config.katsite_essentials.minifier {
 					println!("Minifying {}...", fpath.to_string_lossy());
