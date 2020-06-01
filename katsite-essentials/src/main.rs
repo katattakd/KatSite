@@ -54,8 +54,8 @@ struct Site {
 	pages: Vec<Page>,
 }
 
-static TITLE_LOADER: &str = "<title>{% if page.basename == \"index\" %}{{ site.home_title }}{% else %}{{ page.basename }}{% endif %}</title>\n\n";
 static CSS_LOADER: &str = "{% for file in site.custom_css %}<link rel=stylesheet href=\"themes/{{ file }}\">{% endfor %}\n\n";
+static TITLE_LOADER: &str = "<title>{% if page.basename == \"index\" %}{{ site.home_title }}{% else %}{{ page.basename }}{% endif %}</title>\n\n";
 static BASIC_NAVBAR: &str = "\n\n[Home](index.html){% for page in site.pages %}{% if page.basename == \"index\" %}{% continue %}{% endif %}\n| [{{ page.basename }}]({{ page.name }}){% endfor %}\n\n---\n\n";
 static COMPLEX_NAVBAR: &str = "\n\n<nav>\n{% if page.basename == \"index\" %}<a class=active href=index.html><h3>{{ site.home_title }}</h3></a>{% else %}<a href=index.html><h3>{{ site.home_title }}</h3></a>{% endif %}\n{% for page_ in site.pages %}{% if page_.basename == \"index\" %}{% continue %}{% endif %}{% if page_.name == page.name %}<a class=active href=\"{{ page_.name }}\"><p>{{ page_.basename }}</p></a>{% else %}<a href=\"{{ page_.name }}\"><p>{{ page_.basename }}</p></a>\n{% endif %}{% endfor %}\n</nav>\n\n";
 
@@ -164,19 +164,19 @@ fn render_liquid(data: &str, site: &Site, page: &Page) {
 fn render_markdown_page(config: Config, themeconfig: ThemeConfig, file: &str, data: &str) {
 	let add_start = match themeconfig.layout_type {
 		0 => {
-			[TITLE_LOADER, CSS_LOADER, &themeconfig.append_top_html].concat()
+			[CSS_LOADER, TITLE_LOADER, &themeconfig.append_top_html].concat()
 		}
 		1 => {
-			[TITLE_LOADER, CSS_LOADER, &themeconfig.append_top_html, BASIC_NAVBAR].concat()
+			[CSS_LOADER, TITLE_LOADER, &themeconfig.append_top_html, BASIC_NAVBAR].concat()
 		}
 		2 => {
-			[TITLE_LOADER, CSS_LOADER, &themeconfig.append_top_html, COMPLEX_NAVBAR].concat()
+			[CSS_LOADER, TITLE_LOADER, &themeconfig.append_top_html, COMPLEX_NAVBAR].concat()
 		}
 		x if themeconfig.append_top_html.is_empty() || x == 3 => {
-			[TITLE_LOADER, CSS_LOADER, &themeconfig.append_top_html, COMPLEX_NAVBAR, "<article>\n\n"].concat()
+			[CSS_LOADER, TITLE_LOADER, &themeconfig.append_top_html, COMPLEX_NAVBAR, "<article>\n\n"].concat()
 		}
 		_ => {
-			[TITLE_LOADER, CSS_LOADER, "\n<header>\n", &themeconfig.append_top_html, COMPLEX_NAVBAR, "</header>\n<article>\n\n"].concat()
+			[CSS_LOADER, TITLE_LOADER, "\n<header>\n", &themeconfig.append_top_html, COMPLEX_NAVBAR, "</header>\n<article>\n\n"].concat()
 		}
 	};
 
