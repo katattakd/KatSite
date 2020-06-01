@@ -2,6 +2,8 @@
 # - Use as few plugins as possible. Embedded use cases should manipulate the output HTML, instead of using the plugin system.
 # - If all markdown settings are false, KatSite will use a significantly faster parser (pulldown-cmark instead of comrak).
 # - Try playing around with the thread_pool_size, to find the best value for your system.
+# - For users of katsite-essentials:
+#   - Enable only the features you need. Additional features can slow down site generation.
 
 thread_pool_size = 0 # Limit the size of the thread pool. Setting this to zero will automatically determine the optimal number of threads.
 
@@ -21,6 +23,6 @@ plugins_list = ["katsite-essentials"] # Load plugins in this order.
 
 [katsite_essentials] # Settings for the katsite-essentials plugin
 theme = "demo" # Load the "basic" theme. Set this to "none" to disable theming.
-homepage_title = "My Website" # The title for your site's home page. If unused, defaults to "Home". Implementation of this is theme-specific.
+homepage_title = "My Website" # The title for your site's home page. Implementation of this is theme-specific, some themes may not use it.
 minifier = true # Minify output HTML.
-
+brotli = false # Compress output HTML with Brotli.
