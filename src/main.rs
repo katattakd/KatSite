@@ -2,6 +2,7 @@
 #![warn(clippy::pedantic)]
 #![warn(clippy::cargo)]
 #![allow(clippy::cargo_common_metadata)]
+#![allow(clippy::multiple_crate_versions)]
 #![warn(clippy::all)]
 
 extern crate comrak;
@@ -20,49 +21,50 @@ use std::{thread, string::String, path::PathBuf, fs, fs::File, io::{Error, Read,
 
 #[derive(Deserialize)]
 struct Config {
-	thread_pool_size: usize,
+	plugins_list: Vec<String>,
+	files: Files,
 	markdown: Markdown,
-	html: Html,
-	plugins: Plugins,
+}
+
+#[derive(Deserialize)]
+struct Files {
+	input_glob: String,
+	output_dir: PathBuf,
 }
 
 #[derive(Deserialize)]
 struct Markdown {
-	convert_line_breaks: bool,
-	convert_punctuation: bool,
-	create_header_anchors: bool,
-	enable_github_extensions: bool,
-	enable_comrak_extensions: bool,
+	github_extensions: bool,
+	comrak_extensions: bool,
 }
 
-#[derive(Deserialize)]
-struct Html {
-	append_5doctype: bool,
-	append_viewport: bool,
-}
+const DEFAULT_CONFIG: &str = "plugins_list = []
+[files]
+input_glob = \"./*.md\"
+output_dir = \".\"
+[markdown]
+github_extensions = false
+comrak_extensions = false";
 
-#[derive(Deserialize)]
-struct Plugins {
-	plugins_list: Vec<String>,
-}
-
-fn init_plugins(hook: &str, list: &[String]) {
-	list.par_iter().for_each(|plugin| {
-		let mut child = Command::new(PathBuf::from("plugins/").join(plugin))
-			.arg(hook)
-			.stdin(Stdio::null())
-			.stdout(Stdio::inherit())
-			.stderr(Stdio::inherit())
-			.spawn().unwrap_or_else(|err| {
-				eprintln!("Unable to start plugin {}! Additional info below:\n{}", plugin, err);
-				exit(exitcode::OSERR);
-			});
-		let _ = child.wait();
+fn init_plugins(hook: String, list: Vec<String>) -> thread::JoinHandle<()> {
+	thread::spawn(move || {
+		list.par_iter().for_each(|plugin| {
+			let mut child = Command::new(PathBuf::from("plugins/").join(plugin))
+				.arg(&hook)
+				.stdin(Stdio::null())
+				.stdout(Stdio::inherit())
+				.stderr(Stdio::inherit())
+				.spawn().unwrap_or_else(|err| {
+					eprintln!("Unable to start plugin {}! Additional info below:\n{}", plugin, err);
+					exit(exitcode::OSERR);
+				});
+			let _ = child.wait();
+		})
 	})
 }
 
-fn run_plugins(mut buffer: &mut Vec<u8>, hook: &str, filename: &str, config: &Config) {
-	for plugin in &config.plugins.plugins_list {
+fn run_plugins(mut buffer: &mut Vec<u8>, hook: &str, filename: &str, list: &[String]) {
+	for plugin in list {
 		let mut child = Command::new(PathBuf::from("plugins/").join(plugin))
 			.arg(hook)
 			.arg(filename)
@@ -93,30 +95,31 @@ fn run_plugins(mut buffer: &mut Vec<u8>, hook: &str, filename: &str, config: &Co
 	}
 }
 
-fn markdown_to_html(input: &str, output: &mut dyn Write, config: &Config) -> Result<(), Error> {
-	if config.markdown.convert_line_breaks || config.markdown.convert_punctuation || config.markdown.enable_github_extensions || config.markdown.enable_comrak_extensions || config.markdown.create_header_anchors {
+fn markdown_to_html(input: &str, output: &mut dyn Write, github_ext: bool, comrak_ext: bool) -> Result<(), Error> {
+	if github_ext || comrak_ext {
 		let arena = &Arena::new();
-		let headerids = if config.markdown.create_header_anchors {
-			Some("".to_string())
-		} else {
-			None
-		};
 		let options = &ComrakOptions {
-			hardbreaks: config.markdown.convert_line_breaks,
-			smart: config.markdown.convert_punctuation,
-			github_pre_lang: true, // The lang tag makes a lot more sense than the class tag for <code> elements.
+			hardbreaks: false, // Don't let the user shoot themselves in the foot.
+			smart: comrak_ext,
+			github_pre_lang: true, // The lang tag makes a lot more sense for <code> blocks.
 			width: 0, // Ignored when generating HTML
 			default_info_string: None,
-			unsafe_: true, // Not worth disabling, a proper HTML sanitizer should be used instead.
-			ext_strikethrough: config.markdown.enable_github_extensions,
-			ext_tagfilter: false, // Not worth enabling, a proper HTML sanitizer should be used instead.
-			ext_table: config.markdown.enable_github_extensions,
-			ext_autolink: config.markdown.enable_github_extensions,
-			ext_tasklist: config.markdown.enable_github_extensions,
-			ext_superscript: config.markdown.enable_comrak_extensions,
-			ext_header_ids: headerids,
-			ext_footnotes: config.markdown.enable_comrak_extensions,
-			ext_description_lists: config.markdown.enable_comrak_extensions,
+			unsafe_: true, // A proper HTML sanitizer should be used instead.
+			ext_strikethrough: github_ext,
+			ext_tagfilter: false, // A proper HTML sanitizer should be used instead.
+			ext_table: github_ext,
+			ext_autolink: github_ext,
+			ext_tasklist: github_ext,
+			ext_superscript: comrak_ext,
+			ext_header_ids: {
+				if github_ext {
+					Some("".to_string())
+				} else {
+					None
+				}
+			},
+			ext_footnotes: comrak_ext,
+			ext_description_lists: comrak_ext,
 		};
 		let root = parse_document(arena, input, options);
 		format_html(root, options, output)
@@ -128,15 +131,17 @@ fn markdown_to_html(input: &str, output: &mut dyn Write, config: &Config) -> Res
 
 fn parse_to_file(input: &mut Vec<u8>, output: &mut dyn Write, filename: &str, config: &Config) -> Result<(), Error> {
 	let mut output = BufWriter::new(output);
-	if config.html.append_5doctype {
-		output.write_all(b"<!doctype html>")?;
+	if config.plugins_list.is_empty() {
+		output.write_all(b"<!doctype html><meta name=viewport content=\"width=device-width,initial-scale=1\">")?;
+	} else {
+		run_plugins(input, "markdown", filename, &config.plugins_list);
 	}
-	if config.html.append_viewport {
-		output.write_all(b"<meta name=viewport content=\"width=device-width,initial-scale=1\">")?;
-	}
-
-	run_plugins(input, "markdown", filename, config);
-	markdown_to_html(&String::from_utf8_lossy(input), &mut output, config)?;
+	markdown_to_html(
+		&String::from_utf8_lossy(input),
+		&mut output,
+		config.markdown.github_extensions,
+		config.markdown.comrak_extensions
+	)?;
 
 	output.flush()
 }
@@ -144,28 +149,26 @@ fn parse_to_file(input: &mut Vec<u8>, output: &mut dyn Write, filename: &str, co
 fn main() {
 	println!("Loading config...");
 	let config_input = fs::read_to_string("conf.toml").unwrap_or_else(|_| {
-		eprintln!("Unable to read config file!");
-		exit(exitcode::NOINPUT);
+		eprintln!("Warn: Unable to read config file!");
+		DEFAULT_CONFIG.to_string()
 	});
 	let config: Config = toml::from_str(&config_input).unwrap_or_else(|err| {
 		eprintln!("Unable to parse config file! Additional info below:\n{:#?}", err);
 		exit(exitcode::CONFIG);
 	});
-
-	rayon::ThreadPoolBuilder::new().num_threads(config.thread_pool_size).build_global().unwrap_or_else(|err| {
-		eprintln!("Unable to create thread pool! Additional info below:\n{:#?}", err);
-		exit(exitcode::OSERR);
-	});
-
-	let files = glob("./*.md").unwrap_or_else(|err| {
-		eprintln!("Unable to create file glob! Additional info below:\n{:#?}", err);
-		exit(exitcode::SOFTWARE);
+	let files = glob(&config.files.input_glob).unwrap_or_else(|err| {
+		eprintln!("Unable to parse file glob! Additional info below:\n{:#?}", err);
+		exit(exitcode::CONFIG);
 	}).par_bridge();
 
-	let plugins_list = config.plugins.plugins_list.to_owned();
-	let child = thread::spawn(move || {
-		init_plugins("asyncinit", &plugins_list);
-	});
+	if !config.files.output_dir.exists() {
+		fs::create_dir_all(&config.files.output_dir).unwrap_or_else(|_| {
+			eprintln!("Unable to create output directory!");
+			exit(exitcode::CANTCREAT)
+		});
+	}
+
+	let child = init_plugins("asyncinit".to_string(), config.plugins_list.to_owned());
 
 	files.filter_map(Result::ok).for_each(|fpath| {
 		let input_name = fpath.to_string_lossy();
@@ -176,9 +179,9 @@ fn main() {
 			exit(exitcode::NOINPUT);
 		});
 
-		let output_name = fpath.with_extension("html");
-		let mut output = File::create(&output_name).unwrap_or_else(|_| {
-			eprintln!("Unable to create {:#?}!", &output_name);
+		let output_path = config.files.output_dir.join(fpath.with_extension("html"));
+		let mut output = File::create(&output_path).unwrap_or_else(|_| {
+			eprintln!("Unable to create {:#?}!", &output_path);
 			exit(exitcode::CANTCREAT);
 		});
 
@@ -188,6 +191,6 @@ fn main() {
 		});
 	});
 
-	init_plugins("postinit", &config.plugins.plugins_list);
+	let _ = init_plugins("postinit".to_string(), config.plugins_list).join();
 	let _ = child.join();
 }
