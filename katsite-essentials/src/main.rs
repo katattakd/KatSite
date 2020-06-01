@@ -1,6 +1,7 @@
 #![warn(clippy::nursery)]
 #![warn(clippy::pedantic)]
 #![warn(clippy::cargo)]
+#![allow(clippy::multiple_crate_versions)]
 #![allow(clippy::cargo_common_metadata)]
 #![warn(clippy::all)]
 
@@ -277,7 +278,7 @@ fn main() {
 				eprintln!("Warn: Using an excessive number of plugins may slow down KatSite.")
 			}
 
-			if !config.markdown.convert_line_breaks && !config.markdown.enable_github_extensions && !config.markdown.enable_comrak_extensions && !config.katsite_essentials.brotli && (!config.katsite_essentials.minifier || (!config.katsite_essentials.liquid || !config.katsite_essentials.sanitizer)) && config.plugins.plugins_list.len() <= 3 {
+			if !(config.katsite_essentials.minifier && config.katsite_essentials.liquid && config.katsite_essentials.sanitizer || config.plugins.plugins_list.len() > 3 || config.katsite_essentials.brotli || config.markdown.enable_comrak_extensions || config.markdown.enable_github_extensions || config.markdown.convert_line_breaks) {
 				if config.markdown.convert_punctuation {
 					eprintln!("Warn: Disabling markdown.convert_punctuation will allow KatSite to use a significantly faster Markdown parser.")
 				}
@@ -294,7 +295,7 @@ fn main() {
 				eprintln!("Warn: Disabling markdown.create_header_anchors may significantly reduce the size of the output HTML.")
 			}
 
-			if config.katsite_essentials.theme != "none" && !config.katsite_essentials.liquid && !config.katsite_essentials.sanitizer {
+			if config.katsite_essentials.theme != "none" && !(config.katsite_essentials.liquid || config.katsite_essentials.sanitizer) {
 				eprintln!("Warn: Disabling katsite_essentials.liquid will automatically disable theming.")
 			}
 
@@ -304,7 +305,7 @@ fn main() {
 		},
 		Some(x) if x == "postinit" => {
 			let config = load_config();
-			if !config.katsite_essentials.minifier && !config.katsite_essentials.sanitizer && !config.katsite_essentials.brotli {
+			if config.katsite_essentials.minifier || config.katsite_essentials.sanitizer || config.katsite_essentials.brotli {
 				exit(0);
 			}
 
@@ -334,7 +335,7 @@ fn main() {
 						append = [&append, "<meta name=viewport content=\"width=device-width,initial-scale=1\">"].concat()
 					}
 
-					input = [append.to_string(), clean(&String::from_utf8_lossy(&input))].concat().into_bytes();
+					input = [append, clean(&String::from_utf8_lossy(&input))].concat().into_bytes();
 				}
 
 				if config.katsite_essentials.minifier {
