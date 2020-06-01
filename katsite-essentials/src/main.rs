@@ -305,7 +305,7 @@ fn main() {
 		},
 		Some(x) if x == "postinit" => {
 			let config = load_config();
-			if config.katsite_essentials.minifier || config.katsite_essentials.sanitizer || config.katsite_essentials.brotli {
+			if !(config.katsite_essentials.minifier || config.katsite_essentials.sanitizer || config.katsite_essentials.brotli) {
 				exit(0);
 			}
 
