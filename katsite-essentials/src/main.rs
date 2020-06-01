@@ -3,6 +3,7 @@
 #![allow(clippy::cargo)]
 #![warn(clippy::all)]
 
+extern crate brotli;
 extern crate exitcode;
 extern crate glob;
 extern crate htmlescape;
@@ -11,13 +12,14 @@ extern crate liquid;
 extern crate rayon;
 extern crate serde_derive;
 extern crate toml;
+use brotli::enc::writer::CompressorWriter;
 use glob::glob;
 use htmlescape::{encode_minimal, encode_attribute};
 use hyperbuild::hyperbuild_truncate;
 use liquid::ParserBuilder;
 use rayon::prelude::*;
 use serde_derive::{Serialize, Deserialize};
-use std::{env, fs, io, ffi::OsStr, time::{Duration, UNIX_EPOCH}, io::Read, process::exit, path::Path};
+use std::{env, fs, fs::File, io, ffi::OsStr, time::{Duration, UNIX_EPOCH}, io::{Read, Write}, process::exit, path::Path};
 
 #[derive(Deserialize)]
 struct Config {
@@ -38,6 +40,7 @@ struct Plugin {
 	theme: String,
 	homepage_title: String,
 	minifier: bool,
+	brotli: bool,
 }
 
 #[derive(Serialize)]
@@ -119,7 +122,7 @@ fn load_pageinfo<P: AsRef<Path>>(path: P) -> Page {
 	}
 }
 
-fn load_siteinfo(config: Config, themeconfig: ThemeConfig) -> Site {
+fn load_siteinfo(config: &Config, themeconfig: ThemeConfig) -> Site {
 	let files = glob("./*.md").unwrap_or_else(|err| {
 		eprintln!("Unable to create file glob! Additional info below:\n{:#?}", err);
 		exit(exitcode::SOFTWARE);
@@ -161,7 +164,7 @@ fn render_liquid(data: &str, site: &Site, page: &Page) {
 	});
 }
 
-fn render_markdown_page(config: Config, themeconfig: ThemeConfig, file: &str, data: &str) {
+fn render_markdown_page(config: &Config, themeconfig: ThemeConfig, file: &str, data: &str) {
 	let add_start = match themeconfig.layout_type {
 		0 => {
 			[CSS_LOADER, TITLE_LOADER, &themeconfig.append_top_html].concat()
@@ -210,14 +213,14 @@ fn main() {
 			let config = load_config();
 			let themeconfig = load_theme_config(&config.katsite_essentials.theme);
 
-			render_markdown_page(config, themeconfig, &file.unwrap(), &input);
+			render_markdown_page(&config, themeconfig, &file.unwrap(), &input);
 		},
 		Some(x) if x == "asyncinit" => {
 			exit(0);
 		},
 		Some(x) if x == "postinit" => {
 			let config = load_config();
-			if !config.katsite_essentials.minifier {
+			if !config.katsite_essentials.minifier && !config.katsite_essentials.brotli {
 				exit(0);
 			}
 
@@ -232,21 +235,35 @@ fn main() {
 			}).par_bridge();
 
 			files.filter_map(Result::ok).for_each(|fpath| {
-				println!("Minifying {}...", fpath.to_string_lossy());
 				let mut input = fs::read(&fpath).unwrap_or_else(|_| {
 					eprintln!("Unable to open {:#?}!", &fpath);
 					exit(exitcode::NOINPUT);
 				});
 
-				hyperbuild_truncate(&mut input).unwrap_or_else(|err| {
-					eprintln!("Unable to minify {:#?}! Additional info below:\n{:#?}", &fpath, err);
-					exit(exitcode::DATAERR);
-				});
+				if config.katsite_essentials.minifier {
+					println!("Minifying {}...", fpath.to_string_lossy());
+					hyperbuild_truncate(&mut input).unwrap_or_else(|err| {
+						eprintln!("Unable to minify {:#?}! Additional info below:\n{:#?}", &fpath, err);
+						exit(exitcode::DATAERR);
+					});
+				}
 
-				fs::write(&fpath, input).unwrap_or_else(|_| {
+				fs::write(&fpath, &input).unwrap_or_else(|_| {
 					eprintln!("Unable to write to {:#?}!", &fpath);
 					exit(exitcode::IOERR);
-				})
+				});
+
+				if config.katsite_essentials.brotli {
+					println!("Compressing {}...", fpath.to_string_lossy());
+					let mut file = File::create(&fpath.with_extension("html.br")).unwrap_or_else(|_| {
+						eprintln!("Unable to open {:#?}!", &fpath);
+						exit(exitcode::IOERR);
+					});
+					CompressorWriter::new(&mut file, 4096, 11, 24).write_all(&input).unwrap_or_else(|_| {
+						eprintln!("Unable to write to {:#?}!", &fpath);
+						exit(exitcode::IOERR);
+					});
+				}
 			})
 		},
 		_ => {
