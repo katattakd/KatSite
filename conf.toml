@@ -21,6 +21,6 @@ plugins_list = ["katsite-essentials"] # Load plugins in this order.
 
 [katsite_essentials] # Settings for the katsite-essentials plugin
 theme = "demo" # Load the "basic" theme. Set this to "none" to disable theming.
-theme_hometxt = "home" # The text for your theme's "Home" button. This may be unused in some themes.
+homepage_title = "My Website" # The title for your site's home page. If unused, defaults to "Home". Implementation of this is theme-specific.
 minifier = true # Minify output HTML.
 
