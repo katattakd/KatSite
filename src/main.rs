@@ -27,10 +27,9 @@ struct Config {
 
 #[derive(Deserialize)]
 struct Markdown {
-	filter_html_tags: bool,
 	convert_line_breaks: bool,
 	convert_punctuation: bool,
-	enable_raw_html_inlining: bool,
+	create_header_anchors: bool,
 	enable_github_extensions: bool,
 	enable_comrak_extensions: bool,
 }
@@ -39,7 +38,6 @@ struct Markdown {
 struct Html {
 	append_5doctype: bool,
 	append_viewport: bool,
-	create_header_anchors: bool,
 }
 
 #[derive(Deserialize)]
@@ -95,9 +93,9 @@ fn run_plugins(mut buffer: &mut Vec<u8>, hook: &str, filename: &str, config: &Co
 }
 
 fn markdown_to_html(input: &str, output: &mut dyn Write, config: &Config) -> Result<(), Error> {
-	if config.markdown.filter_html_tags || config.markdown.convert_line_breaks || config.markdown.convert_punctuation || config.markdown.enable_github_extensions || config.markdown.enable_comrak_extensions || !config.markdown.enable_raw_html_inlining || config.html.create_header_anchors {
+	if config.markdown.convert_line_breaks || config.markdown.convert_punctuation || config.markdown.enable_github_extensions || config.markdown.enable_comrak_extensions || config.markdown.create_header_anchors {
 		let arena = &Arena::new();
-		let headerids = if config.html.create_header_anchors {
+		let headerids = if config.markdown.create_header_anchors {
 			Some("".to_string())
 		} else {
 			None
@@ -108,9 +106,9 @@ fn markdown_to_html(input: &str, output: &mut dyn Write, config: &Config) -> Res
 			github_pre_lang: true, // The lang tag makes a lot more sense than the class tag for <code> elements.
 			width: 0, // Ignored when generating HTML
 			default_info_string: None,
-			unsafe_: config.markdown.enable_raw_html_inlining,
+			unsafe_: true, // Not worth disabling, a proper HTML sanitizer should be used instead.
 			ext_strikethrough: config.markdown.enable_github_extensions,
-			ext_tagfilter: config.markdown.filter_html_tags,
+			ext_tagfilter: false, // Not worth enabling, a proper HTML sanitizer should be used instead.
 			ext_table: config.markdown.enable_github_extensions,
 			ext_autolink: config.markdown.enable_github_extensions,
 			ext_tasklist: config.markdown.enable_github_extensions,
