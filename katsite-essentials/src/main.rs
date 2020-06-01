@@ -56,7 +56,7 @@ struct Site {
 
 static TITLE_LOADER: &str = "<title>{% if page.basename == \"index\" %}{{ site.home_title }}{% else %}{{ page.basename }}{% endif %}</title>\n\n";
 static CSS_LOADER: &str = "{% for file in site.custom_css %}<link rel=stylesheet href=\"themes/{{ file }}\">{% endfor %}\n\n";
-static BASIC_NAVBAR: &str = "\n\n[Home](index.html){% for page in site.pages %}{% if page.basename == \"index\" %}{% continue %}{% endif %}\n[{{ page.basename }}]({{ page.name }}){% endfor %}\n\n---\n\n";
+static BASIC_NAVBAR: &str = "\n\n[Home](index.html){% for page in site.pages %}{% if page.basename == \"index\" %}{% continue %}{% endif %}\n| [{{ page.basename }}]({{ page.name }}){% endfor %}\n\n---\n\n";
 static COMPLEX_NAVBAR: &str = "\n\n<nav>\n{% if page.basename == \"index\" %}<a class=active href=index.html><h3>{{ site.home_title }}</h3></a>{% else %}<a href=index.html><h3>{{ site.home_title }}</h3></a>{% endif %}\n{% for page_ in site.pages %}{% if page_.basename == \"index\" %}{% continue %}{% endif %}{% if page_.name == page.name %}<a class=active href=\"{{ page_.name }}\"><p>{{ page_.basename }}</p></a>{% else %}<a href=\"{{ page_.name }}\"><p>{{ page_.basename }}</p></a>\n{% endif %}{% endfor %}\n</nav>\n\n";
 
 fn load_config() -> Config {
