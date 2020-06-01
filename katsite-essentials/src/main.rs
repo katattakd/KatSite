@@ -1,35 +1,29 @@
 #![warn(clippy::nursery)]
 #![warn(clippy::pedantic)]
 #![warn(clippy::cargo)]
-#![allow(clippy::multiple_crate_versions)]
 #![allow(clippy::cargo_common_metadata)]
+#![allow(clippy::multiple_crate_versions)]
 #![warn(clippy::all)]
 
-extern crate ammonia;
-extern crate brotli;
+extern crate comrak;
 extern crate exitcode;
-extern crate extract_frontmatter;
 extern crate glob;
-extern crate htmlescape;
-extern crate hyperbuild;
-extern crate liquid;
+extern crate pulldown_cmark;
 extern crate rayon;
 extern crate serde_derive;
 extern crate toml;
-use ammonia::clean;
-use brotli::enc::writer::CompressorWriter;
+use comrak::{Arena, parse_document, format_html, ComrakOptions};
 use glob::glob;
-use htmlescape::encode_attribute;
-use hyperbuild::hyperbuild_truncate;
-use liquid::ParserBuilder;
+use pulldown_cmark::{Parser, html};
 use rayon::prelude::*;
-use serde_derive::{Serialize, Deserialize};
-use std::{env, fs, fs::File, io, ffi::OsStr, time::{Duration, UNIX_EPOCH}, io::{Read, Write}, process::exit, path::{Path, PathBuf}};
+use serde_derive::Deserialize;
+use std::{thread, string::String, path::PathBuf, fs, fs::File, io::{Error, Read, Write, BufWriter}, process::{exit, Command, Stdio}};
 
 #[derive(Deserialize)]
 struct Config {
+	plugins_list: Vec<String>,
 	files: Files,
-	katsite_essentials: Plugin,
+	markdown: Markdown,
 }
 
 #[derive(Deserialize)]
@@ -39,281 +33,164 @@ struct Files {
 }
 
 #[derive(Deserialize)]
-struct Plugin {
-	name: String,
-
-	og_stub: String,
-	default_lang: String,
-	default_og_type: String,
-	default_is_nsfw: bool,
-	default_allow_robots: bool,
-
-	theme: String,
-	layout: String,
-
-	sanitizer: bool,
-	minifier: bool,
-	brotli: bool,
+struct Markdown {
+	github_extensions: bool,
+	comrak_extensions: bool,
 }
 
-#[derive(Deserialize)]
-struct FrontMatter {
-	title: Option<String>,
-	description: Option<String>,
-	locale: Option<String>,
-	is_nsfw: Option<bool>,
-	allow_robots: Option<bool>,
-	og_type: Option<String>,
-	og_image: Option<String>,
-	og_audio: Option<String>,
-	og_video: Option<String>,
-}
+const DEFAULT_CONFIG: &str = "plugins_list = []
+[files]
+input_glob = \"./*.md\"
+output_dir = \".\"
+[markdown]
+github_extensions = false
+comrak_extensions = false";
 
-#[derive(Serialize)]
-struct Page {
-	created_time: u64,
-	modified_time: u64,
-	name: String,
-	filename: String,
-	filename_raw: String,
-	data: String,
-	title: String,
-	description: Option<String>,
-	locale: String,
-	is_nsfw: bool,
-	allow_robots: bool,
-	og_type: String,
-	og_image: Option<String>,
-	og_audio: Option<String>,
-	og_video: Option<String>,
-}
-
-#[derive(Serialize)]
-struct Site {
-	name: String,
-	theme: String,
-	og_stub: String,
-	pages: Vec<Page>,
-}
-
-fn load_config() -> Config {
-	let config_input = fs::read_to_string("conf.toml").unwrap_or_else(|_| {
-		eprintln!("Unable to read config file!");
-		exit(exitcode::NOINPUT)
-	});
-	toml::from_str(&config_input).unwrap_or_else(|err| {
-		eprintln!("Unable to parse config file! Additional info below:\n{:#?}", err);
-		exit(exitcode::CONFIG);
+fn init_plugins(hook: String, list: Vec<String>) -> thread::JoinHandle<()> {
+	thread::spawn(move || {
+		list.par_iter().for_each(|plugin| {
+			let mut child = Command::new(PathBuf::from("plugins/").join(plugin))
+				.arg(&hook)
+				.stdin(Stdio::null())
+				.stdout(Stdio::inherit())
+				.stderr(Stdio::inherit())
+				.spawn().unwrap_or_else(|err| {
+					eprintln!("Unable to start plugin {}! Additional info below:\n{}", plugin, err);
+					exit(exitcode::OSERR);
+				});
+			let _ = child.wait();
+		})
 	})
 }
 
-fn load_pageinfo<P: AsRef<Path>>(config: &Config, path: P) -> Page {
-	let path = &path.as_ref();
-	let metadata = path.metadata();
+fn run_plugins(mut buffer: &mut Vec<u8>, hook: &str, filename: &str, list: &[String]) {
+	for plugin in list {
+		let mut child = Command::new(PathBuf::from("plugins/").join(plugin))
+			.arg(hook)
+			.arg(filename)
+			.stdin(Stdio::piped())
+			.stdout(Stdio::piped())
+			.stderr(Stdio::inherit())
+			.spawn().unwrap_or_else(|err| {
+				eprintln!("Unable to start plugin {}! Additional info below:\n{}", plugin, err);
+				exit(exitcode::UNAVAILABLE);
+			});
 
-	let html_file = path.with_extension("html");
-	let file_stem = path.file_stem().unwrap_or_else(|| {
-		path.extension().unwrap_or_else(|| OsStr::new(".html"))
-	}).to_string_lossy();
-	let file_name = html_file.file_name().unwrap().to_string_lossy();
+		child.stdin.as_mut().unwrap()
+			.write_all(buffer).unwrap_or_else(|_| {
+				eprintln!("Plugin {} crashed during usage!", plugin);
+				exit(exitcode::UNAVAILABLE);
+			});
 
-	let mut contents = fs::read_to_string(config.files.output_dir.join(&html_file)).unwrap_or_else(|_| {
-		eprintln!("Unable to open {:#?}!", path);
-		exit(exitcode::NOINPUT);
-	});
+		buffer.clear();
+		drop(child.stdin.take());
 
-	let frontmatter_str = if contents.starts_with("<!--") {
-		extract_frontmatter::extract(
-			&extract_frontmatter::Config::new(None, Some("-->"), None, true),
-			&contents
-		)
-	} else {
-		"".to_string()
-	};
+		child.stdout.as_mut().unwrap()
+			.read_to_end(&mut buffer).unwrap_or_else(|_| {
+				eprintln!("Plugin {} crashed during usage!", plugin);
+				exit(exitcode::UNAVAILABLE);
+			});
 
-	if config.katsite_essentials.sanitizer {
-		println!("Sanitizing {}...", path.to_string_lossy());
-		contents = clean(&contents);
-	}
-
-	let frontmatter: FrontMatter = toml::from_str(&frontmatter_str).unwrap_or_else(|err| {
-		eprintln!("Unable to parse {:#?}'s frontmatter! Additional info below:\n{:#?}", path, err);
-		exit(exitcode::DATAERR);
-	});
-
-	Page {
-		created_time: {
-			if let Ok(meta) = &metadata {
-				meta.created().unwrap_or(UNIX_EPOCH)
-				.duration_since(UNIX_EPOCH).unwrap_or_else(|_| Duration::new(0, 0))
-				.as_secs()
-			} else {
-				0
-			}
-		},
-		modified_time: {
-			if let Ok(meta) = &metadata {
-				meta.modified().unwrap_or(UNIX_EPOCH)
-				.duration_since(UNIX_EPOCH).unwrap_or_else(|_| Duration::new(0, 0))
-				.as_secs()
-			} else {
-				0
-			}
-		},
-		name: encode_attribute(&file_stem),
-		filename: encode_attribute(&file_name),
-		filename_raw: file_name.to_string(),
-		data: contents,
-		title: {
-			let title = if let Some(title) = frontmatter.title {
-				if title.chars().count() > 65 {
-					eprintln!("Warning: {}'s title is excessively long.", path.to_string_lossy())
-				}
-				title
-			} else {
-				if path.file_name() == Some(OsStr::new("index.md")) {
-					config.katsite_essentials.name.to_owned()
-				} else {
-					[&file_stem, " - ", &config.katsite_essentials.name].concat()
-				}
-			};
-			encode_attribute(&title)
-		},
-		description: {
-			if let Some(description) = frontmatter.description {
-				if description.chars().count() > 155 {
-					eprintln!("Warning: {}'s description is excessively long.", path.to_string_lossy())
-				}
-				Some(encode_attribute(&description))
-			} else {
-				None
-			}
-		},
-		locale: encode_attribute(&frontmatter.locale.unwrap_or(config.katsite_essentials.default_lang.to_owned())),
-		is_nsfw: frontmatter.is_nsfw.unwrap_or(config.katsite_essentials.default_is_nsfw),
-		allow_robots: frontmatter.allow_robots.unwrap_or(config.katsite_essentials.default_allow_robots),
-		og_type: encode_attribute(&frontmatter.og_type.unwrap_or(config.katsite_essentials.default_og_type.to_owned())),
-		og_image: {
-			if let Some(image) = frontmatter.og_image {
-				Some(encode_attribute(&image))
-			} else {
-				None
-			}
-		},
-		og_audio: {
-			if let Some(audio) = frontmatter.og_audio {
-				Some(encode_attribute(&audio))
-			} else {
-				None
-			}
-		},
-		og_video: {
-			if let Some(video) = frontmatter.og_video {
-				Some(encode_attribute(&video))
-			} else {
-				None
-			}
-		},
+		let _ = child.kill();
 	}
 }
 
-fn load_siteinfo(config: &Config) -> Site {
+fn markdown_to_html(input: &str, output: &mut dyn Write, github_ext: bool, comrak_ext: bool) -> Result<(), Error> {
+	if github_ext || comrak_ext {
+		let arena = &Arena::new();
+		let options = &ComrakOptions {
+			hardbreaks: false, // Don't let the user shoot themselves in the foot.
+			smart: comrak_ext,
+			github_pre_lang: true, // The lang tag makes a lot more sense for <code> blocks.
+			width: 0, // Ignored when generating HTML
+			default_info_string: None,
+			unsafe_: true, // A proper HTML sanitizer should be used instead.
+			ext_strikethrough: github_ext,
+			ext_tagfilter: false, // A proper HTML sanitizer should be used instead.
+			ext_table: github_ext,
+			ext_autolink: github_ext,
+			ext_tasklist: github_ext,
+			ext_superscript: comrak_ext,
+			ext_header_ids: {
+				if github_ext {
+					Some("".to_string())
+				} else {
+					None
+				}
+			},
+			ext_footnotes: comrak_ext,
+			ext_description_lists: comrak_ext,
+		};
+		let root = parse_document(arena, input, options);
+		format_html(root, options, output)
+	} else {
+		let parser = Parser::new(input);
+		html::write_html(output, parser)
+	}
+}
+
+fn parse_to_file(input: &mut Vec<u8>, output: &mut dyn Write, filename: &str, config: &Config) -> Result<(), Error> {
+	let mut output = BufWriter::new(output);
+	if config.plugins_list.is_empty() {
+		output.write_all(b"<!doctype html><meta name=viewport content=\"width=device-width,initial-scale=1\">")?;
+	} else {
+		run_plugins(input, "markdown", filename, &config.plugins_list);
+	}
+	markdown_to_html(
+		&String::from_utf8_lossy(input),
+		&mut output,
+		config.markdown.github_extensions,
+		config.markdown.comrak_extensions
+	)?;
+
+	output.flush()
+}
+
+fn main() {
+	println!("Loading config...");
+	let config_input = fs::read_to_string("conf.toml").unwrap_or_else(|_| {
+		eprintln!("Warn: Unable to read config file!");
+		DEFAULT_CONFIG.to_string()
+	});
+	let config: Config = toml::from_str(&config_input).unwrap_or_else(|err| {
+		eprintln!("Unable to parse config file! Additional info below:\n{:#?}", err);
+		exit(exitcode::CONFIG);
+	});
 	let files = glob(&config.files.input_glob).unwrap_or_else(|err| {
-		eprintln!("Unable to create file glob! Additional info below:\n{:#?}", err);
+		eprintln!("Unable to parse file glob! Additional info below:\n{:#?}", err);
 		exit(exitcode::CONFIG);
 	}).par_bridge();
 
-	let mut pages: Vec<Page> = files.filter_map(Result::ok).map(|file| {
-		load_pageinfo(config, &file)
-	}).collect();
-	pages.par_sort_unstable_by_key(|a| a.filename_raw.to_owned());
-
-	Site {
-		name: config.katsite_essentials.name.to_owned(),
-		theme: config.katsite_essentials.theme.to_owned(),
-		og_stub: config.katsite_essentials.og_stub.to_owned(),
-		pages: pages,
+	if !config.files.output_dir.exists() {
+		fs::create_dir_all(&config.files.output_dir).unwrap_or_else(|_| {
+			eprintln!("Unable to create output directory!");
+			exit(exitcode::CANTCREAT)
+		});
 	}
-}
-fn main() {
-	let command = env::args().nth(1);
 
-	match command {
-		Some(x) if x == "markdown" => {
-			let mut stdin = Vec::new();
-			io::stdin().lock().read_to_end(&mut stdin).unwrap();
-			io::stdout().lock().write_all(&mut stdin).unwrap();
-		},
-		Some(x) if x == "asyncinit" => {
-			exit(0);
-		},
-		Some(x) if x == "postinit" => {
-			let config = load_config();
+	let child = init_plugins("asyncinit".to_string(), config.plugins_list.to_owned());
 
-			println!("Creating site template...");
+	files.filter_map(Result::ok).for_each(|fpath| {
+		let input_name = fpath.to_string_lossy();
 
-			let layout = fs::read_to_string(&config.katsite_essentials.layout).unwrap_or_else(|_| {
-				eprintln!("Unable to open template file!");
-				exit(exitcode::NOINPUT)
-			});
+		println!("Parsing {}...", input_name);
+		let mut input = fs::read(&fpath).unwrap_or_else(|_| {
+			eprintln!("Unable to open {:#?}!", &fpath);
+			exit(exitcode::NOINPUT);
+		});
 
-			let template = ParserBuilder::with_stdlib()
-				.build().unwrap_or_else(|err| {
-					eprintln!("Unable to create liquid parser! Additional info below:\n{:#?}", err);
-					exit(exitcode::SOFTWARE);
-				})
-				.parse(&layout).unwrap_or_else(|err| {
-					eprintln!("Unable to parse template! Additional info below:\n{:#?}", err);
-					exit(exitcode::DATAERR);
-				});
+		let output_path = config.files.output_dir.join(fpath.with_extension("html"));
+		let mut output = File::create(&output_path).unwrap_or_else(|_| {
+			eprintln!("Unable to create {:#?}!", &output_path);
+			exit(exitcode::CANTCREAT);
+		});
 
-			let site = load_siteinfo(&config);
-			site.pages.par_iter().for_each(|page| {
-				println!("Formatting {}...", page.filename_raw);
+		parse_to_file(&mut input, &mut output, &input_name, &config).unwrap_or_else(|_| {
+			eprintln!("Unable to finish parsing {:#?}!", &fpath);
+			exit(exitcode::IOERR);
+		});
+	});
 
-				let globals = liquid::object!({
-					"page": page,
-					"site": site,
-				});
-
-				let mut input = template.render(&globals).unwrap_or_else(|err| {
-					eprintln!("Unable to render template! Additional info below:\n{:#?}", err);
-					exit(exitcode::DATAERR);
-				}).into_bytes();
-
-				if config.katsite_essentials.minifier {
-					println!("Minifying {}...", page.filename_raw);
-					hyperbuild_truncate(&mut input).unwrap_or_else(|err| {
-						eprintln!("Unable to minify {:#?}! Additional info below:\n{:#?}", page.filename_raw, err);
-						exit(exitcode::DATAERR);
-					});
-				}
-
-				let path = config.files.output_dir.join(&page.filename_raw);
-
-				fs::write(&path, &input).unwrap_or_else(|_| {
-					eprintln!("Unable to write to {:#?}!", page.filename_raw);
-					exit(exitcode::IOERR);
-				});
-
-				if config.katsite_essentials.brotli {
-					println!("Compressing {}...", page.filename_raw);
-					let mut file = File::create(
-						Path::new(&path).with_extension("html.br")
-					).unwrap_or_else(|_| {
-						eprintln!("Unable to open {:#?}!", page.filename_raw);
-						exit(exitcode::IOERR);
-					});
-					CompressorWriter::new(&mut file, 4096, 11, 24).write_all(&input).unwrap_or_else(|_| {
-						eprintln!("Unable to write to {:#?}!", page.filename);
-						exit(exitcode::IOERR);
-					});
-				}
-			})
-		},
-		_ => {
-			eprintln!("KatSite Essentials is a plugin for KatSite, and is not meant to be used directly.");
-			exit(exitcode::USAGE);
-		},
-	}
+	let _ = init_plugins("postinit".to_string(), config.plugins_list).join();
+	let _ = child.join();
 }
