@@ -232,9 +232,9 @@ fn load_siteinfo(config: &Config) -> Site {
 	pages.par_sort_unstable_by_key(|a| a.filename_raw.to_owned());
 
 	Site {
-		name: config.katsite_essentials.name.to_owned(),
-		theme: config.katsite_essentials.theme.to_owned(),
-		url_stub: config.katsite_essentials.url_stub.to_owned(),
+		name: encode_attribute(&config.katsite_essentials.name),
+		theme: encode_attribute(&config.katsite_essentials.theme),
+		url_stub: encode(&config.katsite_essentials.url_stub),
 		pages,
 	}
 }
