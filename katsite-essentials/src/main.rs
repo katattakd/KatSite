@@ -225,7 +225,7 @@ fn load_siteinfo(config: &Config) -> Site {
 	let mut pages: Vec<Page> = files.filter_map(Result::ok).map(|file| {
 		load_pageinfo(config, &file)
 	}).collect();
-	pages.par_sort_unstable_by_key(|a| a.filename_raw.to_owned());
+	pages.par_sort_unstable_by_key(|a| a.title.to_owned());
 
 	Site {
 		name: encode_attribute(&config.katsite_essentials.name),
