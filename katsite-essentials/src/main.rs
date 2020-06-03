@@ -170,6 +170,8 @@ fn load_pageinfo<P: AsRef<Path>>(config: &Config, path: P) -> Page {
 		title: {
 			let title = if let Some(title) = frontmatter.title {
 				title
+			} else if file_name == "index.html" {
+				config.katsite_essentials.name.to_string()
 			} else {
 				file_stem.to_string()
 			};
