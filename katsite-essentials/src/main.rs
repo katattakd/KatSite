@@ -76,7 +76,6 @@ struct FrontMatter {
 struct Page {
 	created_time: u64,
 	modified_time: u64,
-	name: String,
 	filename: String,
 	filename_url: String,
 	filename_raw: String,
@@ -164,22 +163,19 @@ fn load_pageinfo<P: AsRef<Path>>(config: &Config, path: P) -> Page {
 				0
 			}
 		},
-		name: encode_attribute(&file_stem),
 		filename: encode_attribute(&encode(&file_name)),
 		filename_url: encode(&file_name),
 		filename_raw: file_name.to_string(),
 		data: contents,
 		title: {
 			let title = if let Some(title) = frontmatter.title {
-				if title.chars().count() > 65 {
-					eprintln!("Warning: {}'s title is excessively long.", path.to_string_lossy())
-				}
 				title
-			} else if path.file_name() == Some(OsStr::new("index.md")) {
-				    config.katsite_essentials.name.to_owned()
 			} else {
-				[&file_stem, " - ", &config.katsite_essentials.name].concat()
+				file_stem.to_string()
 			};
+			if title.chars().count() > 65 {
+				eprintln!("Warning: {}'s title is excessively long.", path.to_string_lossy())
+			}
 			encode_attribute(&title)
 		},
 		description: {
