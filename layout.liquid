@@ -12,7 +12,7 @@
 		{% if page.og_image %}
 			<meta property=og:title content="{{ page.title }}">
 			<meta property=og:type content="{{ page.og_type }}">
-			<meta property=og:url content="{{ site.url_stub }}/{{ page.filename }}">
+			<meta property=og:url content="{{ site.url_stub }}/{{ page.filename_url }}">
 			<meta property=og:image content="{{ page.og_image }}">
 			{% if page.og_audio %}
 				<meta property=og:audio content="{{ page.og_audio }}">
@@ -39,11 +39,12 @@
 		TODO: Favicons!
 
 		Icon sizes:
-		favicon.ico: 16x16, 32x32, 48x48
+		favicon.ico: 48x48
+		icon-touch.png: 180x180
 		icon.png: 192x192
 
 		<link rel="icon" href="/icon.png">
-		<link rel="apple-touch-icon" href="/icon.png">
+		<link rel="apple-touch-icon" href="/icon-touch.png">
 	 	-->
 	</head>
 	<body>
@@ -59,9 +60,9 @@
 						{% continue %}
 					{% endif %}
 					{% if page_.filename_raw == page.filename_raw %}
-						<a class=active href="{{ page_.filename }}"><p>{{ page_.name }}</p></a>
+						<a class=active href="{{ page_.filename_url }}"><p>{{ page_.title }}</p></a>
 					{% else %}
-						<a href="{{ page_.filename }}"><p>{{ page_.name }}</p></a>
+						<a href="{{ page_.filename_url }}"><p>{{ page_.title }}</p></a>
 					{% endif %}
 				{% endfor %}
 			</nav>
