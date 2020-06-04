@@ -14,6 +14,7 @@ extern crate htmlescape;
 extern crate hyperbuild;
 extern crate liquid;
 extern crate rayon;
+extern crate sass_rs;
 extern crate serde_derive;
 extern crate toml;
 extern crate urlencoding;
@@ -24,6 +25,7 @@ use htmlescape::encode_attribute;
 use hyperbuild::hyperbuild_truncate;
 use liquid::ParserBuilder;
 use rayon::prelude::*;
+use sass_rs::{compile_file, OutputStyle::Compressed};
 use serde_derive::{Serialize, Deserialize};
 use std::{env, fs, fs::File, io, ffi::OsStr, time::{Duration, UNIX_EPOCH}, io::{Read, Write}, process::exit, path::{Path, PathBuf}};
 use urlencoding::encode;
@@ -50,7 +52,8 @@ struct Plugin {
 	default_is_nsfw: bool,
 	default_allow_robots: bool,
 
-	theme: String,
+	stylesheet: String,
+
 	layout: String,
 	liquid_glob: String,
 
@@ -94,7 +97,6 @@ struct Page {
 #[derive(Serialize)]
 struct Site {
 	name: String,
-	theme: String,
 	url_stub: String,
 	pages: Vec<Page>,
 }
@@ -138,7 +140,7 @@ fn load_pageinfo<P: AsRef<Path>>(config: &Config, path: P) -> Page {
 		println!("Sanitizing {}...", path.to_string_lossy());
 		contents = clean(&contents);
 	}
-
+ 
 	let frontmatter: FrontMatter = toml::from_str(&frontmatter_str).unwrap_or_else(|err| {
 		eprintln!("Unable to parse {:#?}'s frontmatter! Additional info below:\n{:#?}", path, err);
 		exit(exitcode::DATAERR);
@@ -231,7 +233,6 @@ fn load_siteinfo(config: &Config) -> Site {
 
 	Site {
 		name: encode_attribute(&config.katsite_essentials.name),
-		theme: encode_attribute(&config.katsite_essentials.theme),
 		url_stub: config.katsite_essentials.url_stub.to_owned(),
 		pages,
 	}
@@ -292,7 +293,25 @@ fn main() {
 			io::stdout().lock().write_all(&stdin).unwrap();
 		},
 		Some(x) if x == "asyncinit" => {
-			exit(0);
+			let config = load_config();
+
+			println!("Compiling {}...", config.katsite_essentials.stylesheet);
+
+			let output = compile_file(&config.katsite_essentials.stylesheet, sass_rs::Options{
+				output_style: Compressed,
+				precision: 2,
+				indented_syntax: false,
+				include_paths: vec![],
+			}).unwrap_or_else(|err| {
+				eprintln!("Unable to parse {:#?}! Additional info below:\n{:#?}", &config.katsite_essentials.stylesheet, err);
+				exit(exitcode::DATAERR);
+			});
+
+			fs::write(config.files.output_dir.join("style.css"), output).unwrap_or_else(|_| {
+				eprintln!("Unable to write stylesheet!");
+				exit(exitcode::IOERR);
+			});
+
 		},
 		Some(x) if x == "postinit" => {
 			let config = load_config();
