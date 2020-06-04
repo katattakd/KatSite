@@ -1,10 +1,10 @@
 <!doctype html>
 <html lang="{{ page.locale }}">
 	<head>
-		<link rel=stylesheet href="../themes/theme-{{ site.theme }}.css">
+		<link rel=stylesheet href="style.css">
 		<meta name=viewport content="width=device-width,initial-scale=1">
-		<title>{{ page.title }}</title>
 
+		<title>{{ page.title }}</title>
 		{% if page.description %}
 			<meta name=description content="{{ page.description}}">
 		{% endif %}
@@ -40,21 +40,23 @@
 
 		Icon sizes:
 		favicon.ico: 48x48
-		icon-touch.png: 180x180
 		icon.png: 192x192
 
 		<link rel="icon" href="/icon.png">
-		<link rel="apple-touch-icon" href="/icon-touch.png">
+		<link rel="apple-touch-icon" href="/icon.png">
 	 	-->
 	</head>
 	<body>
 		<header>
+			<a href=#menu-show id=menu-show aria-label="Open main menu"><p>☰</p></a>
+			<a href=#menu-hide aria-hidden=true></a>
 			<nav>
 				{% if page.filename_raw == "index.html" %}
 					<a class=active href=index.html><h3>{{ site.name }}</h3></a>
 				{% else %}
 					<a href=index.html><h3>{{ site.name }}</h3></a>
 				{% endif %}
+				<a href=#menu-hide aria-label="Close main menu"><p>✖ Close</p></a>
 				{% for page_ in site.pages %}
 					{% if page_.filename_raw == "index.html" %}
 						{% continue %}
