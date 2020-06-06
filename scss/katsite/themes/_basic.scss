@@ -1,0 +1,65 @@
+$body-max-width: 64em;
+$vert-navbar-width: 15em;
+
+body {
+	font: 16px/1.6 sans-serif;
+}
+
+code {
+	background: #eee;
+}
+
+a {
+	text-decoration: none;
+}
+
+a:hover {
+	text-decoration: underline;
+}
+
+blockquote {
+	border-left: .3em solid;
+}
+
+/*::selection {
+	background: #08f6;
+	text-shadow: none;
+}
+
+:focus {
+	color: #f04;
+	outline-width: 0;
+}*/
+
+td, th {
+	padding: .4em;
+	border: .15em solid;
+}
+
+@if $vertical-navbar or $horizontal-navbar {
+	header > [href="index.html"] {
+		font-weight: bold;
+	}
+	header a {
+		color: #000;
+	}
+	header {
+		font-size: 95%;
+		background: #eee;
+		.active * {
+			background: #fff;
+		}
+	}
+} @else {
+	nav {
+		border-bottom: .14em solid;
+	}
+	nav {
+		.active * {
+			text-decoration: underline;
+		}
+		a:nth-child(n+2) {
+			border-left: .14em solid #000;
+		}
+	}
+}
