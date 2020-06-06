@@ -1,0 +1,13 @@
+// Note: Remember to minify your output CSS! KatSite's built-in CSS minifier is less than ideal, when compared to dedicated CSS minifiers like CSSO.
+
+// Load KatSite's "basic" theme with the below settings.
+$vertical-navbar: false;
+$horizontal-navbar: false;
+$mobile-width: 900px;
+@import 'scss/katsite/themes/basic';
+
+// Load KatSite framework (~2kb, required for themes!). Supports all modern (less than 2 years old) browsers.
+@import 'scss/katsite/base';
+// CSS normalization for KatSite framework (.2kb, optional).
+@import 'scss/katsite/normalize';
+

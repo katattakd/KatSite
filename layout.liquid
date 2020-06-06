@@ -1,6 +1,7 @@
 <!doctype html>
 <html lang="{{ page.locale }}">
 	<head>
+		<meta charset="utf-8">
 		<link rel=stylesheet href="style.css">
 		<meta name=viewport content="width=device-width,initial-scale=1">
 
@@ -47,16 +48,16 @@
 	 	-->
 	</head>
 	<body>
+		<input type=checkbox style=display:none id=toggle>
 		<header>
-			<a href=#menu-show id=menu-show aria-label="Open main menu"><p>☰</p></a>
-			<a href=#menu-hide aria-hidden=true></a>
+			<a href=index.html><p>{{ site.name }}</p></a>
+			<a href=javascript:void(0)><label for=toggle aria-label="Toggle main menu"><span>{{ page.title }}</span></label></a>
 			<nav>
 				{% if page.filename_raw == "index.html" %}
-					<a class=active href=index.html><h3>{{ site.name }}</h3></a>
+					<a class=active href=index.html><p>Home</p></a>
 				{% else %}
-					<a href=index.html><h3>{{ site.name }}</h3></a>
+					<a href=index.html><p>Home</p></a>
 				{% endif %}
-				<a href=#menu-hide aria-label="Close main menu"><p>✖ Close</p></a>
 				{% for page_ in site.pages %}
 					{% if page_.filename_raw == "index.html" %}
 						{% continue %}
