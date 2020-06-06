@@ -28,17 +28,7 @@ blockquote {
 	margin: 0;
 }
 
-::selection {
-	// Fix display issues in some browsers.
-	text-shadow: none;
-}
-
-:focus {
-	// Fix display issues
-	outline-width: 0;
-}
-
-code, img, video, audio, %katsite-base-media {
+audio, canvas, code, iframe, img, svg, video {
 	// Fix display issues
 	vertical-align: middle;
 	max-width: 100%;
