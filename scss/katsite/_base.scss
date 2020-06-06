@@ -1,0 +1,196 @@
+article {
+	// Improve readability
+	padding: 1em 2em;
+
+	// Fix display issues
+	overflow-x: hidden;
+}
+
+code {
+	// Improve readability
+	font-size: 90%;
+
+	// Fix display issues
+	display: inline-block;
+	padding: .2em .4em;
+}
+
+blockquote {
+	// Fix display issues
+	padding: 0 1em;
+	margin: 0;
+}
+
+::selection {
+	// Fix display issues in some browsers.
+	text-shadow: none;
+}
+
+:focus {
+	// Fix display issues
+	outline-width: 0;
+}
+
+code, img, video, audio, %katsite-base-media {
+	// Fix display issues
+	vertical-align: middle;
+	max-width: 100%;
+	overflow: auto;
+}
+
+table {
+	// Fix display issues
+	border-collapse: collapse;
+}
+
+@if $vertical-navbar or $horizontal-navbar {
+	body {
+		// Fix display issues.
+		margin: 0;
+	}
+	header {
+		top: 0;
+		p, label {
+			// Fix display issues
+			padding: .7em;
+			margin: 0;
+			@if not $vertical-navbar {
+				// Change navbar layout
+				display: inline-block;
+			}
+		}
+		[href$="void(0)"] {
+			// Hide unused elements
+			display: none;
+		}
+		label::before {
+			padding: 1em;
+		}
+	}
+} @else {
+	body {
+		// Fix display issues
+		margin: auto;
+
+		// Change layout on larger screens
+		max-width: 64em;
+	}
+	header > a {
+		// Hide unused elements
+		display: none;
+	}
+	nav {
+		// Fix display issues
+		padding: 2em 0;
+		margin: 0 2em;
+		p {
+			padding: 0 .8em;
+			margin: 0;
+			display: inline-block;
+		}
+	}
+}
+
+@if $horizontal-navbar {
+	header {
+		// Change navbar layout
+		display: grid;
+		position: sticky;
+		grid: auto / 1fr minmax(auto, max-content);
+	}
+	@media screen and (max-width: 900px) {
+		// Show toggle button
+		header [href$="void(0)"] {
+			display: unset;
+		}
+
+		// Hide unused elements
+		header span {
+			display: none;
+		}
+
+		// Toggle navbar
+		#toggle:not(:checked) ~ header {
+			label::before {
+				content: "☰";
+			}
+			nav {
+				display: none;
+			}
+		}
+		#toggle:checked ~ header label::before {
+			content: "✖";
+		}
+	}
+}
+
+@if $vertical-navbar {
+	body {
+		// Change navbar layout
+		display: grid;
+		grid: minmax(100%, 100vh) auto / min-content auto;
+	}
+	header {
+		// Fix display issues
+		width: $vert-navbar-width;
+		overflow: auto;
+	}
+
+	@media screen and (max-width: 900px) {
+		body {
+			// Change navbar layout
+			display: unset;
+		}
+		[href$="void(0)"] {
+			// Show toggle bar
+			display: block !important;
+		}
+
+		#toggle:not(:checked) ~ header {
+			// Show toggle bar
+			width: 100%;
+			position: sticky;
+			[href$="void(0)"] {
+				padding: 1em .3em 1em;
+				& label::before {
+					content: "☰";
+				}
+			}
+
+			// Hide navbar
+			[href="index.html"], nav {
+				display: none;
+			}
+		}
+		#toggle:checked ~ header {
+			// Fix navbar layout
+			position: fixed;
+			height: 100%;
+
+			// Hide unused elements
+			span {
+				display: none;
+			}
+
+			// Show close button
+			label {
+				display: block;
+			}
+			label::before {
+				content: "✖ Close";
+				padding: 0;
+			}
+
+			// Show shadow on content
+			label::after {
+				content: "";
+				position: fixed;
+				top: 0;
+				left: $vert-navbar-width;
+				width: 100%;
+				height: 100%;
+				background: #000a;
+			}
+		}
+	}
+}
