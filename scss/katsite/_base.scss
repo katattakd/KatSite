@@ -1,3 +1,8 @@
+body {
+	// Fix display issues
+	margin: auto;
+}
+
 article {
 	// Improve readability
 	padding: 1em 2em;
@@ -44,10 +49,6 @@ table {
 }
 
 @if $vertical-navbar or $horizontal-navbar {
-	body {
-		// Fix display issues.
-		margin: 0;
-	}
 	header {
 		top: 0;
 		p, label {
@@ -64,16 +65,14 @@ table {
 			display: none;
 		}
 		label::before {
+			// Fix display issues
 			padding: 1em;
 		}
 	}
 } @else {
 	body {
-		// Fix display issues
-		margin: auto;
-
 		// Change layout on larger screens
-		max-width: 64em;
+		max-width: $body-max-width;
 	}
 	header > a {
 		// Hide unused elements
@@ -98,7 +97,7 @@ table {
 		position: sticky;
 		grid: auto / 1fr minmax(auto, max-content);
 	}
-	@media screen and (max-width: 900px) {
+	@media screen and (max-width: $mobile-width) {
 		// Show toggle button
 		header [href$="void(0)"] {
 			display: unset;
@@ -136,7 +135,7 @@ table {
 		overflow: auto;
 	}
 
-	@media screen and (max-width: 900px) {
+	@media screen and (max-width: $mobile-width) {
 		body {
 			// Change navbar layout
 			display: unset;
