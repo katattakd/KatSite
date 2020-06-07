@@ -5,13 +5,6 @@
 #![allow(clippy::multiple_crate_versions)]
 #![warn(clippy::all)]
 
-extern crate comrak;
-extern crate exitcode;
-extern crate glob;
-extern crate pulldown_cmark;
-extern crate rayon;
-extern crate serde_derive;
-extern crate toml;
 use comrak::{Arena, parse_document, format_html, ComrakOptions};
 use glob::glob;
 use pulldown_cmark::{Parser, html};
