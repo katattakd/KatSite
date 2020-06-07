@@ -1,32 +1,27 @@
-# Additional notes for users needing extra performance:
-# - Use as few plugins as possible.
-# - Use as few markdown extensions as possible.
-# - For users of katsite-essentials:
-#   - Enable only the features you need. Additional features can slow down site generation.
-
-plugins_list = ["katsite-essentials"]
+plugins_list = ["katsite-essentials"]	# KatSite plugins to load.
 
 [files] # I/O settings.
-input_glob = "./*.md" # Pattern used to find input files.
-output_dir = "./output" # Output directory. If it does not exist, it will automatically be created.
+input_glob = "./*.md"		# Pattern used to find input files.
+output_dir = "./output"		# Output directory. If it does not exist, it will automatically be created.
 
 [markdown] # Markdown parser settings.
-github_extensions = true # Enable GitHub markdown extensions (header ids, strikethrough, tables, automatic links, task lists).
-comrak_extensions = true # Enable Comrak markdown extensions (curly quotes, superscript, footnotes, description lists).
+github_extensions = true	# Enable GitHub markdown extensions (header ids, strikethrough, tables, automatic links, task lists).
+comrak_extensions = true	# Enable Comrak markdown extensions (curly quotes, superscript, footnotes, description lists).
 
 [katsite_essentials] # Settings for the katsite-essentials plugin
-name = "My Website" # The name of your website.
-url_stub = "https://example.com" # The stub url used for fields requiring an absolute URL.
+name = "My Website"			# The name of your website.
+url_stub = "https://example.com"	# The stub url used for fields requiring an absolute URL.
 
-default_lang = "en"         # The default language for pages.
-default_og_type = "website" # The default Open Graph type for pages.
-default_is_nsfw = false     # The default NSFW status for pages.
-default_allow_robots = true # The default "robots" policy for pages.
+default_lang = "en"			# The default language for pages.
+default_og_type = "website"		# The default Open Graph type for pages.
+default_is_nsfw = false			# The default NSFW status for pages.
+default_allow_robots = true		# The default "robots" policy for pages.
 
-theme = "demo"             # Load the "basic" theme. Set this to "none" to disable theming.
-layout = "layout.liquid"   # Use the "layout.liquid" file for generating pages.
-liquid_glob = "./*.liquid" # Pattern used to find additional liquid templates.
+stylesheet = "style.scss"		# Use the style.scss stylesheet for pages.
 
-sanitizer = true # Sanitize input HTML.
-minifier = true # Minify output HTML.
-brotli = false # Compress output HTML with Brotli.
+layout = "layout.liquid"		# Use the "layout.liquid" file for generating pages.
+liquid_glob = "./*.liquid"		# Pattern used to find additional liquid templates.
+
+sanitizer = true			# Sanitize input HTML.
+minifier = true				# Minify output HTML.
+brotli = false				# Compress output HTML with Brotli.

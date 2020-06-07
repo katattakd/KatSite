@@ -2,7 +2,20 @@
 <html lang="{{ page.locale }}">
 	<head>
 		<meta charset="utf-8">
-		<link rel=stylesheet href="style.css">
+		<link rel=stylesheet href="/style.css">
+		<!--
+		TODO: Favicons!
+
+		Icon generation:
+		magick convert profile2.png -strip -resize 192x192^ -gravity Center -crop 192x192+0+0 -dither None -colors 64 apple-touch-icon.png
+		optipng apple-touch-icon.png -o7 -zm1-9
+		magick convert apple-touch-icon.png -dither None -resize 48x48 -colors 24 favicon.png
+		optipng favicon.png -o7 -zm1-9
+		magick convert favicon.png -flatten -dither None -colors 16 icon.ico
+
+		-->
+		<link rel="icon" sizes="48x48" href="/favicon.png">
+		<link rel="icon" sizes="192x192" href="/apple-touch-icon.png">
 		<meta name=viewport content="width=device-width,initial-scale=1">
 
 		<title>{{ page.title }}</title>
@@ -35,17 +48,6 @@
 		{% if page.is_nsfw %}
 			<meta name=rating content=adult>
 		{% endif %}
-
-		<!--
-		TODO: Favicons!
-
-		Icon sizes:
-		favicon.ico: 48x48
-		icon.png: 192x192
-
-		<link rel="icon" href="/icon.png">
-		<link rel="apple-touch-icon" href="/icon.png">
-	 	-->
 	</head>
 	<body>
 		<input type=checkbox style=display:none id=toggle>
