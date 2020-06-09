@@ -12,7 +12,7 @@ edition = '2018'
 default-run = "katsite"
 
 [workspace]
-members = ["katsite-essentials"]
+members = ["katsite-essentials", "katsite-favicons"]
 
 [dependencies]
 comrak = "=0.7.0"

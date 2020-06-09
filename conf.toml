@@ -1,4 +1,4 @@
-plugins_list = ["katsite-essentials"]	# KatSite plugins to load.
+plugins_list = ["katsite-essentials", "katsite-favicons"] # Plugins to load.
 
 [files] # I/O settings.
 input_glob = "./*.md"		# Pattern used to find input files.
@@ -25,3 +25,6 @@ liquid_glob = "./*.liquid"		# Pattern used to find additional liquid templates.
 sanitizer = true			# Sanitize input HTML.
 minifier = true				# Minify output HTML.
 brotli = false				# Compress output HTML with Brotli.
+
+[katsite_favicons] # Settings for the katsite-favicons plugin
+favicon = "icon.png"			# Use the icon.png image for generating favicons.
