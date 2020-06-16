@@ -47,7 +47,7 @@ fn init_plugin(hook: &str, plugin: &str) {
 		.stderr(Stdio::inherit())
 		.spawn().unwrap_or_else(|err| {
 			eprintln!("Unable to start plugin {}! Additional info below:\n{}", plugin, err);
-			exit(exitcode::OSERR);
+			exit(exitcode::UNAVAILABLE);
 		});
 	let _ = child.wait();
 }
