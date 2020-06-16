@@ -39,20 +39,30 @@ output_dir = \".\"
 github_extensions = false
 comrak_extensions = false";
 
-fn init_plugins(hook: String, list: Vec<String>) -> thread::JoinHandle<()> {
+fn init_plugin(hook: &str, plugin: &str) {
+	let mut child = Command::new(PathBuf::from("plugins/").join(plugin))
+		.arg(hook)
+		.stdin(Stdio::null())
+		.stdout(Stdio::inherit())
+		.stderr(Stdio::inherit())
+		.spawn().unwrap_or_else(|err| {
+			eprintln!("Unable to start plugin {}! Additional info below:\n{}", plugin, err);
+			exit(exitcode::OSERR);
+		});
+	let _ = child.wait();
+}
+
+fn init_plugins(hook: String, list: Vec<String>, ordered: bool) -> thread::JoinHandle<()> {
 	thread::spawn(move || {
-		list.par_iter().for_each(|plugin| {
-			let mut child = Command::new(PathBuf::from("plugins/").join(plugin))
-				.arg(&hook)
-				.stdin(Stdio::null())
-				.stdout(Stdio::inherit())
-				.stderr(Stdio::inherit())
-				.spawn().unwrap_or_else(|err| {
-					eprintln!("Unable to start plugin {}! Additional info below:\n{}", plugin, err);
-					exit(exitcode::OSERR);
-				});
-			let _ = child.wait();
-		})
+		if ordered {
+			list.iter().for_each(|plugin| {
+				init_plugin(&hook, plugin)
+			});
+		} else {
+			list.par_iter().for_each(|plugin| {
+				init_plugin(&hook, plugin)
+			});
+		}
 	})
 }
 
@@ -161,7 +171,7 @@ fn main() {
 		});
 	}
 
-	let child = init_plugins("asyncinit".to_string(), config.plugins_list.to_owned());
+	let child = init_plugins("asyncinit".to_string(), config.plugins_list.to_owned(), false);
 
 	files.filter_map(Result::ok).for_each(|fpath| {
 		let input_name = fpath.to_string_lossy();
@@ -184,6 +194,6 @@ fn main() {
 		});
 	});
 
-	let _ = init_plugins("postinit".to_string(), config.plugins_list).join();
+	let _ = init_plugins("postinit".to_string(), config.plugins_list, true).join();
 	let _ = child.join();
 }
