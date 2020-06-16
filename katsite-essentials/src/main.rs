@@ -1,23 +1,11 @@
 #![warn(clippy::nursery)]
 #![warn(clippy::pedantic)]
+#![allow(clippy::struct_excessive_bools)]
 #![warn(clippy::cargo)]
 #![allow(clippy::multiple_crate_versions)]
 #![allow(clippy::cargo_common_metadata)]
 #![warn(clippy::all)]
 
-extern crate ammonia;
-extern crate brotli;
-extern crate exitcode;
-extern crate extract_frontmatter;
-extern crate glob;
-extern crate htmlescape;
-extern crate hyperbuild;
-extern crate liquid;
-extern crate rayon;
-extern crate sass_rs;
-extern crate serde_derive;
-extern crate toml;
-extern crate urlencoding;
 use ammonia::clean;
 use brotli::enc::writer::CompressorWriter;
 use glob::glob;
@@ -25,7 +13,6 @@ use htmlescape::encode_attribute;
 use hyperbuild::hyperbuild_truncate;
 use liquid::ParserBuilder;
 use rayon::prelude::*;
-use sass_rs::{compile_file, OutputStyle::Compressed};
 use serde_derive::{Serialize, Deserialize};
 use std::{env, fs, fs::File, io, ffi::OsStr, time::{Duration, UNIX_EPOCH}, io::{Read, Write}, process::exit, path::{Path, PathBuf}};
 use urlencoding::encode;
@@ -52,9 +39,7 @@ struct Plugin {
 	default_is_nsfw: bool,
 	default_allow_robots: bool,
 
-	stylesheet: String,
-
-	layout: String,
+	layout: PathBuf,
 	liquid_glob: String,
 
 	sanitizer: bool,
@@ -293,25 +278,7 @@ fn main() {
 			io::stdout().lock().write_all(&stdin).unwrap();
 		},
 		Some(x) if x == "asyncinit" => {
-			let config = load_config();
-
-			println!("Compiling {}...", config.katsite_essentials.stylesheet);
-
-			let output = compile_file(&config.katsite_essentials.stylesheet, sass_rs::Options{
-				output_style: Compressed,
-				precision: 2,
-				indented_syntax: false,
-				include_paths: vec![],
-			}).unwrap_or_else(|err| {
-				eprintln!("Unable to parse {:#?}! Additional info below:\n{:#?}", &config.katsite_essentials.stylesheet, err);
-				exit(exitcode::DATAERR);
-			});
-
-			fs::write(config.files.output_dir.join("style.css"), output).unwrap_or_else(|_| {
-				eprintln!("Unable to write stylesheet!");
-				exit(exitcode::IOERR);
-			});
-
+			exit(0);
 		},
 		Some(x) if x == "postinit" => {
 			let config = load_config();
