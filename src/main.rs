@@ -127,8 +127,8 @@ fn markdown_to_html(input: &str, output: &mut dyn Write, github_ext: bool, comra
 				hardbreaks: false, // Disabled for consistency with other Markdown parsers.
 				github_pre_lang: false, // Disabled for consistency with other Markdown parsers.
 				width: 0, // Ignored when generating HTML
-				unsafe_: true, // Enabled for consistency with other Markdown parsers.
-				escape: true, // Ignored when _unsafe is true.
+				unsafe_: true, // A proper HTML sanitizer should be used instead.
+				escape: false, // A proper HTML sanitizer should be used instead.
 			},
 		};
 		let root = parse_document(arena, input, options);
