@@ -5,7 +5,7 @@
 #![allow(clippy::multiple_crate_versions)]
 #![warn(clippy::all)]
 
-use comrak::{Arena, parse_document, format_html, ComrakOptions};
+use comrak::{Arena, parse_document, format_html, ComrakOptions, ComrakExtensionOptions, ComrakParseOptions, ComrakRenderOptions};
 use glob::glob;
 use pulldown_cmark::{Parser, html};
 use rayon::prelude::*;
@@ -102,27 +102,34 @@ fn markdown_to_html(input: &str, output: &mut dyn Write, github_ext: bool, comra
 	if github_ext || comrak_ext {
 		let arena = &Arena::new();
 		let options = &ComrakOptions {
-			hardbreaks: false, // Don't let the user shoot themselves in the foot.
-			smart: comrak_ext,
-			github_pre_lang: true, // The lang tag makes a lot more sense for <code> blocks.
-			width: 0, // Ignored when generating HTML
-			default_info_string: None,
-			unsafe_: true, // A proper HTML sanitizer should be used instead.
-			ext_strikethrough: github_ext,
-			ext_tagfilter: false, // A proper HTML sanitizer should be used instead.
-			ext_table: github_ext,
-			ext_autolink: github_ext,
-			ext_tasklist: github_ext,
-			ext_superscript: comrak_ext,
-			ext_header_ids: {
-				if github_ext {
-					Some("".to_string())
-				} else {
-					None
-				}
+			extension: ComrakExtensionOptions {
+				strikethrough: github_ext,
+				tagfilter: false, // A proper HTML sanitizer should be used instead.
+				table: github_ext,
+				autolink: github_ext,
+				tasklist: github_ext,
+				superscript: comrak_ext,
+				header_ids: {
+					if github_ext {
+						Some("".to_string())
+					} else {
+						None
+					}
+				},
+				footnotes: comrak_ext,
+				description_lists: comrak_ext,
 			},
-			ext_footnotes: comrak_ext,
-			ext_description_lists: comrak_ext,
+			parse: ComrakParseOptions {
+				smart: comrak_ext,
+				default_info_string: None,
+			},
+			render: ComrakRenderOptions {
+				hardbreaks: false, // Disabled for consistency with other Markdown parsers.
+				github_pre_lang: false, // Disabled for consistency with other Markdown parsers.
+				width: 0, // Ignored when generating HTML
+				unsafe_: true, // Enabled for consistency with other Markdown parsers.
+				escape: true, // Ignored when _unsafe is true.
+			},
 		};
 		let root = parse_document(arena, input, options);
 		format_html(root, options, output)
