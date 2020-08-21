@@ -15,7 +15,7 @@ default-run = "katsite"
 members = ["katsite-essentials", "katsite-favicons", "katsite-scss"]
 
 [dependencies]
-comrak = "0.7"
+comrak = "0.8"
 exitcode = "1.1"
 glob = "0.3"
 pulldown-cmark = "0.7"
