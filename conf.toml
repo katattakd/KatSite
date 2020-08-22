@@ -1,4 +1,5 @@
-plugins_list = ["katsite-essentials", "katsite-favicons", "katsite-scss"] # Plugins to load.
+#plugins_list = ["katsite-essentials", "katsite-favicons", "katsite-scss"] # Plugins to load.
+plugins_list = ["katsite-essentials"]
 
 [files] # I/O settings.
 input_glob = "./*.md"		# Pattern used to find input files.
@@ -19,14 +20,10 @@ default_allow_robots = true		# The default "robots" policy for pages.
 
 layout = "layout.liquid"		# Use the "layout.liquid" file for generating pages.
 liquid_glob = "./*.liquid"		# Pattern used to find additional liquid templates.
+stylesheet = "style.scss"		# Use the "style.scss" file for styling pages.
+favicon = "icon.png"			# Use the "icon.png" file for generating favicons.
 
 sanitizer = true			# Sanitize input HTML.
-minifier = true				# Minify output HTML.
+minifier = true				# Minify output HTML/CSS/JS/Favicon. Requires csso-cli to be installed.
 brotli = false				# Compress output HTML with Brotli.
 
-[katsite_scss] # Settings for the katsite-scss plugin
-stylesheet = "style.scss"		# Use the style.scss stylesheet as input.
-minifier = true				# Minify output CSS. Requires csso-cli to be installed.
-
-[katsite_favicons] # Settings for the katsite-favicons plugin
-favicon = "icon.png"			# Use the icon.png image for generating favicons.
