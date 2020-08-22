@@ -1,13 +1,14 @@
 #![warn(clippy::nursery)]
 #![warn(clippy::pedantic)]
 #![allow(clippy::struct_excessive_bools)]
+#![allow(clippy::cast_possible_truncation)]
 #![warn(clippy::cargo)]
 #![allow(clippy::multiple_crate_versions)]
 #![allow(clippy::cargo_common_metadata)]
 #![warn(clippy::all)]
 
 use ammonia::clean;
-use brotli::enc::writer::CompressorWriter;
+use brotli::enc::{writer::CompressorWriter, backward_references::{BrotliEncoderParams, BrotliHasherParams, BrotliEncoderMode}, command::BrotliDistanceParams, encode::{BROTLI_MAX_DISTANCE, BROTLI_MAX_DISTANCE_BITS, BROTLI_DISTANCE_ALPHABET_SIZE}};
 use extract_frontmatter::Extractor;
 use glob::glob;
 use htmlescape::encode_attribute;
@@ -101,6 +102,68 @@ fn load_config() -> Config {
 		eprintln!("Unable to parse config file! Additional info below:\n{:#?}", err);
 		exit(exitcode::CONFIG);
 	})
+}
+
+fn compress_file(path: &Path, mode: BrotliEncoderMode) {
+	let mut input_file = File::open(&path).unwrap_or_else(|_| {
+		eprintln!("Unable to open {:#?}!", path.to_string_lossy());
+		exit(exitcode::IOERR);
+	});
+	let input_size = input_file.metadata().map(|m| m.len() as usize).unwrap_or(0);
+	let mut input = Vec::with_capacity(input_size + 1);
+	input_file.read_to_end(&mut input).unwrap_or_else(|_| {
+		eprintln!("Unable to read {:#?}!", path.to_string_lossy());
+		exit(exitcode::IOERR);
+	});
+
+	let output_path = path.with_extension([&path.extension().unwrap_or_else(|| OsStr::new("")).to_string_lossy(), ".br"].concat());
+	let mut output = File::create(&output_path).unwrap_or_else(|_| {
+		eprintln!("Unable to create {:#?}!", path.with_extension(".br").to_string_lossy());
+		exit(exitcode::IOERR);
+	});
+	let params = BrotliEncoderParams {
+		dist: BrotliDistanceParams {
+			distance_postfix_bits: 0,
+			num_direct_distance_codes: 0,
+			alphabet_size: BROTLI_DISTANCE_ALPHABET_SIZE(0, 0, BROTLI_MAX_DISTANCE_BITS),
+			max_distance: BROTLI_MAX_DISTANCE,
+		},
+		mode,
+		quality: 11,
+		q9_5: false,
+		lgwin: 22,
+		lgblock: 0,
+		size_hint: input_size,
+		disable_literal_context_modeling: 0,
+		hasher: BrotliHasherParams {
+			type_: 6,
+			block_bits: 11 - 1,
+			bucket_bits: 15,
+			hash_len: 5,
+			num_last_distances_to_check: 16,
+			literal_byte_score: 0,
+		},
+		log_meta_block: false,
+		stride_detection_quality: 0,
+		high_entropy_detection_quality: 0,
+		cdf_adaptation_detection: 0,
+		prior_bitmask_detection: 0,
+		literal_adaptation: [(0,0);4],
+		large_window: false,
+		avoid_distance_prefix_search:false,
+		catable: false,
+		use_dictionary: true,
+		appendable: false,
+		magic_number: false,
+		favor_cpu_efficiency: false,
+	};
+	CompressorWriter::with_params(&mut output, 4096, &params).write_all(&input).unwrap_or_else(|_| {
+		eprintln!("Unable to write to {:#?}!", path.with_extension(".br").to_string_lossy());
+		exit(exitcode::IOERR);
+	});
+	if output.metadata().map(|m| m.len() as usize).unwrap_or(0) > input_size {
+		let _ = fs::remove_file(output_path);
+	}
 }
 
 fn load_pageinfo<P: AsRef<Path>>(config: &Config, path: P) -> Page {
@@ -463,16 +526,7 @@ fn main() {
 
 				if config.katsite_essentials.brotli {
 					println!("Compressing {}...", page.filename_raw);
-					let mut file = File::create(
-						Path::new(&path).with_extension("html.br")
-					).unwrap_or_else(|_| {
-						eprintln!("Unable to open {:#?}!", page.filename_raw);
-						exit(exitcode::IOERR);
-					});
-					CompressorWriter::new(&mut file, 4096, 11, 24).write_all(&input).unwrap_or_else(|_| {
-						eprintln!("Unable to write to {:#?}!", page.filename);
-						exit(exitcode::IOERR);
-					});
+					compress_file(&path, BrotliEncoderMode::BROTLI_MODE_TEXT)
 				}
 			})
 		},
