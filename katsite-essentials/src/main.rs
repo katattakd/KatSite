@@ -11,12 +11,14 @@ use brotli::enc::writer::CompressorWriter;
 use extract_frontmatter::Extractor;
 use glob::glob;
 use htmlescape::encode_attribute;
+use image::{imageops::FilterType::Lanczos3, math::nq::NeuQuant, imageops::colorops::ColorMap};
 use liquid::ParserBuilder;
 use minify_html::{Cfg, truncate};
+use oxipng::{optimize, InFile, OutFile, Options, Headers::All, Deflaters::Zopfli};
 use rayon::prelude::*;
 use sass_rs::{compile_file, OutputStyle::Expanded};
 use serde_derive::{Serialize, Deserialize};
-use std::{env, fs, fs::File, io, ffi::OsStr, time::{Duration, UNIX_EPOCH}, io::{Read, Write}, process::{exit, Command, Stdio}, path::{Path, PathBuf}};
+use std::{env, fs, fs::File, io, ffi::OsStr, time::{Duration, UNIX_EPOCH}, io::{Read, Write}, process::{exit, Command, Stdio}, path::{Path, PathBuf}, thread};
 use urlencoding::encode;
 
 #[derive(Deserialize)]
@@ -44,6 +46,7 @@ struct Plugin {
 	layout: PathBuf,
 	liquid_glob: String,
 	stylesheet: PathBuf,
+	favicon: PathBuf,
 
 	sanitizer: bool,
 	minifier: bool,
@@ -283,42 +286,125 @@ fn main() {
 		Some(x) if x == "asyncinit" => {
 			let config = load_config();
 
-			println!("Compiling {}...", config.katsite_essentials.stylesheet.to_string_lossy());
+			let minifier = config.katsite_essentials.minifier;
+			let output_dir = config.files.output_dir.to_owned();
+			let stylesheet = config.katsite_essentials.stylesheet.to_owned();
+			let thread = thread::spawn(move || {
+				if !stylesheet.exists() {
+					return
+				}
 
-			let output = compile_file(&config.katsite_essentials.stylesheet, sass_rs::Options{
-				output_style: Expanded,
-				precision: 2,
-				indented_syntax: false,
-				include_paths: vec![],
-			}).unwrap_or_else(|err| {
-				eprintln!("Unable to parse {:#?}! Additional info below:\n{:#?}", &config.katsite_essentials.stylesheet, err);
-				exit(exitcode::DATAERR);
+				println!("Compiling {}...", stylesheet.to_string_lossy());
+
+				let output = compile_file(&stylesheet, sass_rs::Options{
+					output_style: Expanded,
+					precision: 2,
+					indented_syntax: false,
+					include_paths: vec![],
+				}).unwrap_or_else(|err| {
+					eprintln!("Unable to parse {:#?}! Additional info below:\n{:#?}", &stylesheet, err);
+					exit(exitcode::DATAERR);
+				});
+
+				let output_file = output_dir.join("style.css");
+				fs::write(&output_file, output).unwrap_or_else(|_| {
+					eprintln!("Unable to write stylesheet!");
+					exit(exitcode::IOERR);
+				});
+
+				if !minifier {
+					return
+				}
+
+				println!("Minifying {}...", stylesheet.to_string_lossy());
+
+				let mut child = Command::new("csso")
+					.arg(&output_file)
+					.arg("--output").arg(&output_file)
+					.stdin(Stdio::null())
+					.stdout(Stdio::inherit())
+					.stderr(Stdio::inherit())
+					.spawn().unwrap_or_else(|err| {
+						eprintln!("Unable to start CSS minifier! Additional info below:\n{}", err);
+						exit(exitcode::UNAVAILABLE);
+					});
+				let _ = child.wait();
 			});
 
-			let output_file = config.files.output_dir.join("style.css");
+			if config.katsite_essentials.favicon.exists() {
+				println!("Parsing {}...", config.katsite_essentials.favicon.to_string_lossy());
+				let icon1 = image::open(&config.katsite_essentials.favicon).unwrap_or_else(|_| {
+					eprintln!("Unable to read {:#?}!", config.katsite_essentials.favicon);
+					exit(exitcode::NOINPUT);
+				});
+				let icon2 = icon1.to_owned();
 
-			fs::write(&output_file, output).unwrap_or_else(|_| {
-				eprintln!("Unable to write stylesheet!");
-				exit(exitcode::IOERR);
-			});
+				let output1 = config.files.output_dir.join("apple-touch-icon.png");
+				let output2 = config.files.output_dir.join("favicon.png");
 
-			if !config.katsite_essentials.minifier {
-				return
+				let mut options1 = Options::from_preset(6);
+				options1.fix_errors = true;
+				options1.strip = All;
+				options1.deflate = Zopfli;
+				let options2 = options1.to_owned();
+
+				let thread1 = thread::spawn(move || {
+					println!("Creating apple-touch-icon.png...");
+
+					let mut icon = icon1.resize_to_fill(192, 192, Lanczos3).to_rgba();
+
+					let nq = NeuQuant::new(1, 64, icon.to_owned().into_flat_samples().as_slice());
+					for pixel in icon.pixels_mut() {
+						nq.map_color(pixel);
+					}
+
+					icon.save(output1.to_owned()).unwrap_or_else(|_| {
+						eprintln!("Unable to create apple-touch-icon.png!");
+						exit(exitcode::CANTCREAT);
+					});
+
+					if !minifier {
+						return
+					}
+
+					println!("Minifying apple-touch-icon.png...");
+					optimize(&InFile::Path(output1), &OutFile::Path(None), &options1).unwrap_or_else(|_| {
+						eprintln!("Unable to minify apple-touch-icon.png!");
+						exit(exitcode::IOERR);
+					});
+				});
+				
+				let thread2 = thread::spawn(move || {
+					println!("Creating favicon.png...");
+
+					let mut icon = icon2.resize_to_fill(48, 48, Lanczos3).to_rgba();
+
+					let nq = NeuQuant::new(1, 16, icon.to_owned().into_flat_samples().as_slice());
+					for pixel in icon.pixels_mut() {
+						nq.map_color(pixel);
+					}
+
+					icon.save(output2.to_owned()).unwrap_or_else(|_| {
+						eprintln!("Unable to create favicon.png!");
+						exit(exitcode::CANTCREAT);
+					});
+
+					if !minifier {
+						return
+					}
+
+					println!("Minifying favicon.png...");
+					optimize(&InFile::Path(output2), &OutFile::Path(None), &options2).unwrap_or_else(|_| {
+						eprintln!("Unable to minify favicon.png!");
+						exit(exitcode::IOERR);
+					});
+				});
+
+				let _ = thread1.join();
+				let _ = thread2.join();
 			}
 
-			println!("Minifying {}...", config.katsite_essentials.stylesheet.to_string_lossy());
-
-			let mut child = Command::new("csso")
-				.arg(&output_file)
-				.arg("--output").arg(&output_file)
-				.stdin(Stdio::null())
-				.stdout(Stdio::inherit())
-				.stderr(Stdio::inherit())
-				.spawn().unwrap_or_else(|err| {
-					eprintln!("Unable to start CSS minifier! Additional info below:\n{}", err);
-					exit(exitcode::UNAVAILABLE);
-				});
-			let _ = child.wait();
+			let _ = thread.join();
 		},
 		Some(x) if x == "postinit" => {
 			let config = load_config();
