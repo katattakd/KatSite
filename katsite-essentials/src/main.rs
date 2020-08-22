@@ -131,7 +131,7 @@ fn compress_file(path: &Path, mode: BrotliEncoderMode) {
 		mode,
 		quality: 11,
 		q9_5: false,
-		lgwin: 22,
+		lgwin: 24,
 		lgblock: 0,
 		size_hint: input_size,
 		disable_literal_context_modeling: 0,
@@ -330,10 +330,19 @@ fn load_additional_templates(site: &Site, config: &Config) {
 			exit(exitcode::DATAERR);
 		});
 
-		fs::write(config.files.output_dir.join(&file.file_stem().unwrap()), output).unwrap_or_else(|_| {
+		let output_path = config.files.output_dir.join(&file.file_stem().unwrap());
+
+		fs::write(&output_path, output).unwrap_or_else(|_| {
 			eprintln!("Unable to create {:#?}", file.file_stem());
 			exit(exitcode::IOERR);
 		});
+
+		if !config.katsite_essentials.brotli {
+			return
+		}
+
+		println!("Compressing {}...", file.file_stem().unwrap().to_string_lossy());
+		compress_file(&output_path, BrotliEncoderMode::BROTLI_MODE_TEXT);
 	})
 }
 
@@ -350,6 +359,7 @@ fn main() {
 			let config = load_config();
 
 			let minifier = config.katsite_essentials.minifier;
+			let brotli = config.katsite_essentials.brotli;
 			let output_dir = config.files.output_dir.to_owned();
 			let stylesheet = config.katsite_essentials.stylesheet.to_owned();
 			let thread = thread::spawn(move || {
@@ -375,23 +385,27 @@ fn main() {
 					exit(exitcode::IOERR);
 				});
 
-				if !minifier {
+				if minifier {
+					println!("Minifying {}...", stylesheet.to_string_lossy());
+					let mut child = Command::new("csso")
+						.arg(&output_file)
+						.arg("--output").arg(&output_file)
+						.stdin(Stdio::null())
+						.stdout(Stdio::inherit())
+						.stderr(Stdio::inherit())
+						.spawn().unwrap_or_else(|err| {
+							eprintln!("Unable to start CSS minifier! Additional info below:\n{}", err);
+							exit(exitcode::UNAVAILABLE);
+					});
+					let _ = child.wait();
+				}
+
+				if !brotli {
 					return
 				}
 
-				println!("Minifying {}...", stylesheet.to_string_lossy());
-
-				let mut child = Command::new("csso")
-					.arg(&output_file)
-					.arg("--output").arg(&output_file)
-					.stdin(Stdio::null())
-					.stdout(Stdio::inherit())
-					.stderr(Stdio::inherit())
-					.spawn().unwrap_or_else(|err| {
-						eprintln!("Unable to start CSS minifier! Additional info below:\n{}", err);
-						exit(exitcode::UNAVAILABLE);
-					});
-				let _ = child.wait();
+				println!("Compressing {}...", stylesheet.to_string_lossy());
+				compress_file(&output_file, BrotliEncoderMode::BROTLI_MODE_TEXT);
 			});
 
 			if config.katsite_essentials.favicon.exists() {
@@ -426,15 +440,21 @@ fn main() {
 						exit(exitcode::CANTCREAT);
 					});
 
-					if !minifier {
+					if minifier {
+						println!("Minifying apple-touch-icon.png...");
+						optimize(&InFile::Path(output1.to_owned()), &OutFile::Path(None), &options1)
+						.unwrap_or_else(|_| {
+							eprintln!("Unable to minify apple-touch-icon.png!");
+							exit(exitcode::IOERR);
+						});
+					}
+
+					if !brotli {
 						return
 					}
 
-					println!("Minifying apple-touch-icon.png...");
-					optimize(&InFile::Path(output1), &OutFile::Path(None), &options1).unwrap_or_else(|_| {
-						eprintln!("Unable to minify apple-touch-icon.png!");
-						exit(exitcode::IOERR);
-					});
+					println!("Compressing apple-touch-icon.png...");
+					compress_file(&output1, BrotliEncoderMode::BROTLI_MODE_GENERIC);
 				});
 				
 				let thread2 = thread::spawn(move || {
@@ -452,15 +472,21 @@ fn main() {
 						exit(exitcode::CANTCREAT);
 					});
 
-					if !minifier {
+					if minifier {
+						println!("Minifying favicon.png...");
+						optimize(&InFile::Path(output2.to_owned()), &OutFile::Path(None), &options2)
+						.unwrap_or_else(|_| {
+							eprintln!("Unable to minify favicon.png!");
+							exit(exitcode::IOERR);
+						});
+					}
+
+					if !brotli {
 						return
 					}
 
-					println!("Minifying favicon.png...");
-					optimize(&InFile::Path(output2), &OutFile::Path(None), &options2).unwrap_or_else(|_| {
-						eprintln!("Unable to minify favicon.png!");
-						exit(exitcode::IOERR);
-					});
+					println!("Compressing favicon.png...");
+					compress_file(&output2, BrotliEncoderMode::BROTLI_MODE_GENERIC);
 				});
 
 				let _ = thread1.join();
@@ -526,7 +552,7 @@ fn main() {
 
 				if config.katsite_essentials.brotli {
 					println!("Compressing {}...", page.filename_raw);
-					compress_file(&path, BrotliEncoderMode::BROTLI_MODE_TEXT)
+					compress_file(&path, BrotliEncoderMode::BROTLI_MODE_TEXT);
 				}
 			})
 		},
