@@ -25,5 +25,5 @@ favicon = "icon.png"			# Use the "icon.png" file for generating favicons.
 
 sanitizer = true			# Sanitize input HTML.
 minifier = true				# Minify output HTML/CSS/JS/Favicon. Requires csso-cli to be installed.
-brotli = false				# Compress output HTML with Brotli.
+brotli = true				# Compress output HTML/CSS/JS/Favicon with Brotli.
 
