@@ -8,13 +8,15 @@
 
 use ammonia::clean;
 use brotli::enc::writer::CompressorWriter;
+use extract_frontmatter::Extractor;
 use glob::glob;
 use htmlescape::encode_attribute;
-use hyperbuild::hyperbuild_truncate;
 use liquid::ParserBuilder;
+use minify_html::{Cfg, truncate};
 use rayon::prelude::*;
+use sass_rs::{compile_file, OutputStyle::Expanded};
 use serde_derive::{Serialize, Deserialize};
-use std::{env, fs, fs::File, io, ffi::OsStr, time::{Duration, UNIX_EPOCH}, io::{Read, Write}, process::exit, path::{Path, PathBuf}};
+use std::{env, fs, fs::File, io, ffi::OsStr, time::{Duration, UNIX_EPOCH}, io::{Read, Write}, process::{exit, Command, Stdio}, path::{Path, PathBuf}};
 use urlencoding::encode;
 
 #[derive(Deserialize)]
@@ -41,6 +43,7 @@ struct Plugin {
 
 	layout: PathBuf,
 	liquid_glob: String,
+	stylesheet: PathBuf,
 
 	sanitizer: bool,
 	minifier: bool,
@@ -113,10 +116,10 @@ fn load_pageinfo<P: AsRef<Path>>(config: &Config, path: P) -> Page {
 	});
 
 	let frontmatter_str = if contents.starts_with("<!--") {
-		extract_frontmatter::extract(
-			&extract_frontmatter::Config::new(None, Some("-->"), None, true),
-			&contents
-		)
+		Extractor::new(&contents)
+			.select_by_terminator("-->")
+			.discard_first_line()
+			.extract()
 	} else {
 		"".to_string()
 	};
@@ -278,7 +281,44 @@ fn main() {
 			io::stdout().lock().write_all(&stdin).unwrap();
 		},
 		Some(x) if x == "asyncinit" => {
-			exit(0);
+			let config = load_config();
+
+			println!("Compiling {}...", config.katsite_essentials.stylesheet.to_string_lossy());
+
+			let output = compile_file(&config.katsite_essentials.stylesheet, sass_rs::Options{
+				output_style: Expanded,
+				precision: 2,
+				indented_syntax: false,
+				include_paths: vec![],
+			}).unwrap_or_else(|err| {
+				eprintln!("Unable to parse {:#?}! Additional info below:\n{:#?}", &config.katsite_essentials.stylesheet, err);
+				exit(exitcode::DATAERR);
+			});
+
+			let output_file = config.files.output_dir.join("style.css");
+
+			fs::write(&output_file, output).unwrap_or_else(|_| {
+				eprintln!("Unable to write stylesheet!");
+				exit(exitcode::IOERR);
+			});
+
+			if !config.katsite_essentials.minifier {
+				return
+			}
+
+			println!("Minifying {}...", config.katsite_essentials.stylesheet.to_string_lossy());
+
+			let mut child = Command::new("csso")
+				.arg(&output_file)
+				.arg("--output").arg(&output_file)
+				.stdin(Stdio::null())
+				.stdout(Stdio::inherit())
+				.stderr(Stdio::inherit())
+				.spawn().unwrap_or_else(|err| {
+					eprintln!("Unable to start CSS minifier! Additional info below:\n{}", err);
+					exit(exitcode::UNAVAILABLE);
+				});
+			let _ = child.wait();
 		},
 		Some(x) if x == "postinit" => {
 			let config = load_config();
@@ -319,7 +359,10 @@ fn main() {
 
 				if config.katsite_essentials.minifier {
 					println!("Minifying {}...", page.filename_raw);
-					hyperbuild_truncate(&mut input).unwrap_or_else(|err| {
+					let cfg = &Cfg {
+						minify_js: true,
+					};
+					truncate(&mut input, cfg).unwrap_or_else(|err| {
 						eprintln!("Unable to minify {:#?}! Additional info below:\n{:#?}", page.filename_raw, err);
 						exit(exitcode::DATAERR);
 					});
